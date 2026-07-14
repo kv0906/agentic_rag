@@ -1,0 +1,19 @@
+node_modules/
+.next/
+out/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+.env
+.DS_Store
+backend/data/
+*.log
+.turbo/
+dist/
+# Local PDF text dumps (source playbooks may be confidential)
+eval/_playbook_extract.txt
+eval/results*.md
+tsconfig.tsbuildinfo
+eval/results*.json

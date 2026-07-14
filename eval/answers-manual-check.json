@@ -1,0 +1,347 @@
+[
+  {
+    "id": "q01",
+    "category": "overview",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What does the MM bot do?",
+    "gold_answer": "The Market Maker (MM) bot automatically places and manages buy/sell orders around the mid price to provide liquidity and capture the spread. You configure parameters like position limit, step size, distance, and budget; the bot spreads orders across a grid, updates them as price shifts, and runs continuously without manual intervention.",
+    "agent_answer": "The MM bot is a **market-making tool** that **automatically places and manages buy/sell orders around the mid price** to **provide liquidity and capture the spread**. You set parameters like position limit, step size, distance, and budget, and it keeps updating orders continuously without manual intervention. [Chunk 2]",
+    "must_have": [
+      "liquidity",
+      "mid"
+    ]
+  },
+  {
+    "id": "q02",
+    "category": "terms",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": false,
+    "question": "What is a binary market?",
+    "gold_answer": "A market with only two possible outcomes: YES or NO.",
+    "agent_answer": "A **binary market** usually means a market or market structure with only **two possible states or outcomes**.\n\nDepending on the context, it can mean:\n\n- **Binary options / trading:** a yes/no bet on whether an asset will be above or below a certain price at a certain time.\n- **Economics / finance more broadly:** a market where an event has only two outcomes, such as **up/down**, **yes/no**, or **default/no default**.\n- **Prediction markets:** contracts that pay out only if a specific condition happens, making the result effectively binary.\n\nIf you meant a specific finance term or a concept from a document, I can explain that version too.",
+    "must_have": [
+      "YES",
+      "NO"
+    ]
+  },
+  {
+    "id": "q03",
+    "category": "terms",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the spread?",
+    "gold_answer": "The gap between the best buy price and the best sell price.",
+    "agent_answer": "The **spread** is the **price gap between the best bid and best ask** in the order book; in this playbook, the bot aims to **capture the spread** by placing buy/sell orders around the mid price (Chunk 3).",
+    "must_have": [
+      "buy",
+      "sell"
+    ]
+  },
+  {
+    "id": "q04",
+    "category": "terms",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What does MM User mean?",
+    "gold_answer": "The market-maker user account that owns a given market on the platform.",
+    "agent_answer": "“MM User” means a **Market Maker user**—an operator/account that uses an assigned trading wallet to place and manage trades on the platform. The playbook says MM users are assigned accounts in Wallet Management, and each MM user can only work with the accounts assigned to them. [Chunk 2, Chunk 5]",
+    "must_have": [
+      "market-maker",
+      "owns"
+    ]
+  },
+  {
+    "id": "q05",
+    "category": "navigation",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the left-hand main navigation menu used for, and what are the main items?",
+    "gold_answer": "It is the map of the platform workspaces: Live Markets, Positions / Open Orders, Wallet Management, Reports, and Accounts.",
+    "agent_answer": "The left-hand main navigation menu is used to access the platform’s main workspaces. It acts as a map of the platform, with each item opening a different section of work. The main items are: **Live Markets**, **Positions / Open Orders**, **Wallet Management**, **Reports**, and **Accounts**. [Chunk 1]",
+    "must_have": [
+      "Live Markets",
+      "Wallet"
+    ]
+  },
+  {
+    "id": "q06",
+    "category": "live_markets",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "Which market statuses appear on the Live Markets page?",
+    "gold_answer": "Only markets that are Live or Approved appear on the Live Markets page. Proposed or rejected markets are not shown.",
+    "agent_answer": "The Live Markets page shows these market status filters: **All**, **Active**, and **Inactive**. It also says the page lists each market’s **current status**. [Chunk 3]",
+    "must_have": [
+      "Live",
+      "Approved"
+    ]
+  },
+  {
+    "id": "q07",
+    "category": "live_markets",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "When should I use Merge Shares on a market?",
+    "gold_answer": "Merge Shares combines matched YES + NO shares back into their underlying balance. Use it as a position-management action to settle complementary shares an account holds.",
+    "agent_answer": "Use **Merge Shares** when you have **matched YES and NO shares in the same market** and want to **combine them back into the underlying balance**. It’s a **position-management** action used to settle complementary shares you hold, not to place trades. [Chunk 1]",
+    "must_have": [
+      "YES",
+      "NO"
+    ]
+  },
+  {
+    "id": "q08",
+    "category": "positions",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What does P&L mean on All Positions, and how is it colored?",
+    "gold_answer": "P&L is Profit and Loss — the unrealized profit or loss on your position using the latest market price. It shows in green when a position is up and red when it is down.",
+    "agent_answer": "On **All Positions**, **P&L** means **profit/loss**. It is colored **green when a position is up** and **red when it is down**. [Chunk 1]",
+    "must_have": [
+      "profit",
+      "green",
+      "red"
+    ]
+  },
+  {
+    "id": "q09",
+    "category": "wallet",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What characters are allowed in a new wallet name?",
+    "gold_answer": "Wallet Name is required and supports alphanumeric characters and underscores only.",
+    "agent_answer": "A new wallet name supports **alphanumeric characters and underscores only**. (Chunk 1)",
+    "must_have": [
+      "alphanumeric",
+      "underscore"
+    ]
+  },
+  {
+    "id": "q10",
+    "category": "wallet",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "If an MM user cannot see or trade on an account, where should I check first?",
+    "gold_answer": "Check MM Assignments under Wallet Management. The MM user likely has not been assigned to that account yet.",
+    "agent_answer": "Check **Wallet Management → MM Assignments** first. That screen determines which trading accounts each MM user can access, so if they can’t see or trade on an account, it’s usually an assignment issue. [Chunk 1, Chunk 2, Chunk 4]",
+    "must_have": [
+      "MM Assignments",
+      "assigned"
+    ]
+  },
+  {
+    "id": "q11",
+    "category": "reports",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What are the four Reports sub-sections and when do I use each?",
+    "gold_answer": "Dashboard (big-picture overview of volume, PnL, balances), Tx Log (per-order and money in/out), Markets (performance per market), and MM (performance per MM account). Start with Dashboard, then drill into the others.",
+    "agent_answer": "The **four Reports sub-sections** are:\n\n1. **Dashboard** — use this for a **top-level overall summary** of performance across all MM accounts and markets.  \n2. **Transaction Log (Tx Log)** — use this to see a **per-order record** of matched orders and related money movements.  \n3. **Market Reports** — use this to view performance **broken down by market**.  \n4. **MM Reports** — use this to view performance **broken down by Market Maker user / wallet**.  \n\nSource: Reports overview and sub-section breakdown in the playbook ([Chunk 1], [Chunk 3], [Chunk 6], [Chunk 8]).",
+    "must_have": [
+      "Dashboard",
+      "Tx Log",
+      "Markets"
+    ]
+  },
+  {
+    "id": "q12",
+    "category": "reports",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "How is PnL calculated on the MM Report?",
+    "gold_answer": "PnL (USD) is net realized trading profit or loss, calculated as Redeem − Order Filled.",
+    "agent_answer": "PnL on the MM Report is calculated as **net realized trading profit or loss**. Specifically, the playbook defines it as:\n\n**PnL (USD) = Redeem + Merge − Order Filled**  \nor equivalently, in the account report: **PnL = Redeem − Order Filled** when referring to redeemed amount versus executed trade notional.  \nCitations: chunk 3 (page 28), chunk 2 (page 24).\n\n",
+    "must_have": [
+      "Redeem",
+      "Order Filled"
+    ]
+  },
+  {
+    "id": "q13",
+    "category": "strategy",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is Initial Seeding used for?",
+    "gold_answer": "Initial Seeding creates the first buy/sell (YES/NO) orders in the order book and establishes an initial price level (mid price) for the market.",
+    "agent_answer": "Initial Seeding is used to create the first YES/NO buy-sell orders in the order book and establish the market’s initial mid price. It’s the starting step for seeding a market before keeping the book liquid with other strategies like Auto Refresh. [Chunk 2, Chunk 1]",
+    "must_have": [
+      "mid price",
+      "order book"
+    ]
+  },
+  {
+    "id": "q14",
+    "category": "strategy",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the valid range for Mid Price in cents?",
+    "gold_answer": "Mid Price is in cents with a valid range of 1–99. Orders are placed symmetrically above and below this price.",
+    "agent_answer": "The valid range for **Mid Price** is **1–99 cents**. [Chunk 1](source=Huua-MMBot-Playbook%20Final.pdf%20|%20page=34), [Chunk 2](source=Huua-MMBot-Playbook%20Final.pdf%20|%20page=32)",
+    "must_have": [
+      "1",
+      "99"
+    ]
+  },
+  {
+    "id": "q15",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What are the recommended Auto Refresh Group 1 settings?",
+    "gold_answer": "Group 1 (core liquidity): Position limit Admin YES $10 / NO $10, Presale YES $5 / NO $5; Distance 2; Step size 2–3; Number of orders 7–10; Budget $10 per side; Refresh time 1. Use Auto Refresh before the market goes LIVE.",
+    "agent_answer": "Recommended **Auto Refresh Group 1 (core liquidity)** settings are:\n\n- **Position limit:** Admin **$10 / $10**; Presale **$5 / $5**\n- **Distance:** **2**\n- **Step size:** **2–3**\n- **Number of orders:** **7–10**\n- **Budget:** **$10 per side**\n- **Refresh time:** **1 minute**  \n- Run it **before the market goes live**.  \n\nSource: Huua-MMBot-Playbook Final.pdf, p. 33 and quick reference on p. 46.",
+    "must_have": [
+      "Distance 2",
+      "7",
+      "10"
+    ]
+  },
+  {
+    "id": "q16",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What are recommended Auto Refresh Group 2 unmatched-order settings?",
+    "gold_answer": "Group 2 sits further from mid: Distance 25–30, Step size 2, Number of orders 10, Budget $70–$100, Refresh time 3. Group 2 distance must always be higher than Group 1.",
+    "agent_answer": "Recommended **Auto Refresh Group 2 (unmatched orders)** settings are:\n\n- **Distance:** 25–30¢\n- **Step size:** 2\n- **Number of orders:** 10\n- **Budget:** $70–$100\n- **Refresh time:** 3 minutes\n\nGroup 2 should sit farther from the mid price to catch larger moves, and its distance must be higher than Group 1. [Chunk 1][Chunk 3]",
+    "must_have": [
+      "25",
+      "30",
+      "70"
+    ]
+  },
+  {
+    "id": "q17",
+    "category": "strategy",
+    "difficulty": "easy",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the maximum number of orders per group?",
+    "gold_answer": "Number of Orders is the total orders placed in the group, with a maximum of 50. This is also listed under universal rules on the cheat-sheet.",
+    "agent_answer": "The maximum number of orders per group is **50**. The quick reference says: **“Max 50 orders/group”** (Chunk 4, page 46).",
+    "must_have": [
+      "50"
+    ]
+  },
+  {
+    "id": "q18",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "How does Volume Boost (Simple) work?",
+    "gold_answer": "It generates volume using account pairs: one wallet creates positions and the other burns them, producing matched trades. Use an even number of wallets and run it before the market goes LIVE. One cycle is create → burn → done; cycles repeat until the volume target is met. Recommended quantity $5–$10, refresh 1 min, target volume $40–$50.",
+    "agent_answer": "Volume Boost (Simple) generates volume by using **matched account pairs**: one wallet creates positions and the other burns them, so each cycle is a **create → burn → done** loop with no account looping. It picks a **random wallet pair** each cycle, adds small **jitter** to look less robotic, then waits **5–60 seconds** before the next cycle. It keeps repeating until the **target volume** is reached or you stop it. Use an **even number of wallets** and run it **before the market goes live**.  \nSources: Chunk 1, Chunk 2.",
+    "must_have": [
+      "even",
+      "LIVE",
+      "create"
+    ]
+  },
+  {
+    "id": "q19",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What are the default Dynamic Budget Zones?",
+    "gold_answer": "Stop 0¢–20¢ uses 0% budget (no new orders). Safe 20¢–80¢ uses 100% of available budget. Stop 80¢–100¢ uses 0%. Turn on Dynamic Budget in Auto Refresh. It only controls new orders on refresh.",
+    "agent_answer": "The default Dynamic Budget Zones are:\n\n- **0¢–20¢:** Stop (**0%** budget)\n- **20¢–80¢:** Safe (**100%** budget)\n- **80¢–100¢:** Stop (**0%** budget)\n\n[Source: Chunk 2; also summarized in Chunk 3]",
+    "must_have": [
+      "20",
+      "80",
+      "0%"
+    ]
+  },
+  {
+    "id": "q20",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "When should I use Sport Odds every 5 minutes vs every 1–2 hours?",
+    "gold_answer": "Every 5 minutes is for very fast-moving live markets (highest cost, super responsive). Every 1–2 hours is before the match / low movement (lowest cost, slow). More frequent refresh means more Draw API calls and higher SGO cost. Sport Odds is only for admin-created sport markets.",
+    "agent_answer": "Use **every 5 minutes** only for **very fast-moving live sport markets** where odds change quickly and you need the bot to stay highly responsive. It has the **highest cost** and is the **most responsive** option. [Chunk 1]\n\nUse **every 1–2 hours** for **quiet / low-movement markets**, especially **before match** or when **cost control matters most**. It has the **lowest cost** but is slower to react. [Chunk 1]\n\nIn short:\n- **5 min** = fast live action, max responsiveness\n- **1–2 hours** = quiet markets, minimize cost\n\nThe playbook also summarizes this as: **Quiet → 1–2h, Normal → 30m, Active → 15m, Fast live → 5m**. [Chunk 3]",
+    "must_have": [
+      "5 minutes",
+      "Draw API"
+    ]
+  },
+  {
+    "id": "q21",
+    "category": "strategy",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "In Budget % mode with multiple groups, what is the rule for the sum of percentages?",
+    "gold_answer": "The sum of all % values across groups must not exceed 100%, because each group's budget is % × Position Limit and Position Limit is a shared risk cap.",
+    "agent_answer": "In **Budget (%) mode with multiple groups**, the **sum of all group percentages must not exceed 100%** of the shared Position Limit. If it did, the combined budgets could exceed the actual Position Limit. (Chunk 1, Chunk 2)",
+    "must_have": [
+      "100%"
+    ]
+  },
+  {
+    "id": "q22",
+    "category": "workflow",
+    "difficulty": "medium",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the recommended order to start running the bot according to the playbook closing advice?",
+    "gold_answer": "Start with Initial Seeding to establish a mid price, then keep the book liquid with Auto Refresh. Watch positions and PnL in Reports, and use the cheat-sheet for defaults. When in doubt, use read-only actions (View Market, Monitor) before making changes.",
+    "agent_answer": "According to the closing advice, **start with Initial Seeding first** to establish a mid price, **then keep the book liquid with Auto Refresh**. It also suggests watching positions and PnL in Reports, and using read-only actions like View Market or Monitor if unsure. (Chunk 3)",
+    "must_have": [
+      "Initial Seeding",
+      "Auto Refresh"
+    ]
+  },
+  {
+    "id": "q23",
+    "category": "routing",
+    "difficulty": "easy",
+    "should_retrieve": false,
+    "did_retrieve": false,
+    "question": "hello",
+    "gold_answer": "A short greeting reply is fine; no document retrieval is required.",
+    "agent_answer": "Hello! How can I help you today?",
+    "must_have": []
+  },
+  {
+    "id": "q24",
+    "category": "routing",
+    "difficulty": "easy",
+    "should_retrieve": false,
+    "did_retrieve": false,
+    "question": "What is the weather in Singapore today?",
+    "gold_answer": "Not in the playbook; the assistant should not invent platform content. Prefer saying it does not know or that this is outside the document.",
+    "agent_answer": "I can help with questions about uploaded PDFs, but I don’t have live weather access here.\n\nIf you want, I can:\n- help you find weather info in a document you uploaded, or\n- suggest the fastest way to check Singapore’s current weather.",
+    "must_have": []
+  },
+  {
+    "id": "q25",
+    "category": "negative",
+    "difficulty": "hard",
+    "should_retrieve": true,
+    "did_retrieve": true,
+    "question": "What is the API rate limit for the public REST endpoint rate-limit header X-RateLimit-Remaining?",
+    "gold_answer": "This is not specified in the MMBot External User Playbook. A correct system should say it does not know or that the document does not cover this.",
+    "agent_answer": "I couldn’t find any document content about a public REST API or the `X-RateLimit-Remaining` header in the uploaded PDF. The retrieved passages appear to be about MMBot strategy settings, not API rate limits.\n\nIf you meant a different document, please upload it or point me to the relevant PDF/page.",
+    "must_have": []
+  }
+]
