@@ -65,7 +65,12 @@ def split_contexts(retrieve_text: str) -> list[str]:
     """Turn our joined tool string into a list of chunk strings for Ragas."""
     if not retrieve_text or retrieve_text.startswith("No documents"):
         return []
-    parts = re.split(r"\n\n(?=\[Chunk )", retrieve_text.strip())
+    text = retrieve_text.strip()
+    # Current format: "### Passage N" cards; legacy: "[Chunk N]"
+    if "### Passage " in text:
+        parts = re.split(r"\n\n(?=### Passage )", text)
+    else:
+        parts = re.split(r"\n\n(?=\[Chunk )", text)
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -79,12 +84,18 @@ def must_have_hit(text: str, needles: list[str]) -> bool:
 def ingest_playbook(pdf: Path) -> None:
     if not pdf.is_file():
         raise FileNotFoundError(f"PDF not found: {pdf}")
-    clear_index()
-    dest = BACKEND / "data" / "uploads" / f"eval_{pdf.name}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(pdf, dest)
-    meta = ingest_pdf(dest, original_name=pdf.name)
-    print(f"Ingested {pdf.name} → pages={meta.get('pages')}")
+    # Snapshot first: clear_index() wipes backend/data/uploads, which may be the source.
+    tmp = EVAL_DIR / f".tmp_eval_{pdf.name}"
+    shutil.copy2(pdf, tmp)
+    try:
+        clear_index()
+        dest = BACKEND / "data" / "uploads" / f"eval_{pdf.name}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(tmp, dest)
+        meta = ingest_pdf(dest, original_name=pdf.name)
+        print(f"Ingested {pdf.name} → pages={meta.get('pages')}")
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def collect_dataset(cases: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -267,6 +278,11 @@ def main() -> int:
         help="Only cases with should_retrieve=true (recommended for Ragas)",
     )
     parser.add_argument(
+        "--ids",
+        default="",
+        help="Comma-separated case ids (e.g. q02,q06). Empty = all after other filters.",
+    )
+    parser.add_argument(
         "--model",
         default=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
         help="Judge + already used by agent via env",
@@ -285,6 +301,12 @@ def main() -> int:
     cases = load_golden(args.golden)
     if args.only_retrieve:
         cases = [c for c in cases if c.get("should_retrieve", True)]
+    if args.ids.strip():
+        want = {x.strip() for x in args.ids.split(",") if x.strip()}
+        cases = [c for c in cases if c.get("id") in want]
+        missing = want - {c.get("id") for c in cases}
+        if missing:
+            print(f"Warning: unknown ids: {sorted(missing)}", file=sys.stderr)
     if args.limit and args.limit > 0:
         cases = cases[: args.limit]
 

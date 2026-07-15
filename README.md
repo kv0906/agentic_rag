@@ -4,7 +4,7 @@ A minimal **agentic RAG** app so you can see how the pieces fit:
 
 | Layer | Role |
 |--------|------|
-| **LlamaIndex** | PDF load → chunk → embed → hybrid retrieve (vector + BM25 → RRF) |
+| **LlamaIndex** | PDF load → chunk → embed → hybrid retrieve (vector + BM25 → RRF → cross-encoder rerank) |
 | **LangGraph** | Agent graph: decide → retrieve → grade → rewrite (loop) → answer |
 | **Astryx + Next.js** | Upload + chat UI (tool calls visible) |
 | **FastAPI** | Glue API (`/api/upload`, `/api/chat`) |
@@ -22,7 +22,7 @@ Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/os
                  ┌────────────┘             └──► END (direct reply)
                  ▼
            ┌──────────┐
-           │ retrieve │  ← LlamaIndex hybrid (vector + BM25 → RRF)
+           │ retrieve │  ← hybrid (vector+BM25→RRF) → CE rerank
            └────┬─────┘
                 ▼
         ┌───────────────┐
@@ -34,7 +34,7 @@ Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/os
 ```
 
 1. **Decide** — model either greets / answers without docs, or calls `retrieve_documents`.
-2. **Retrieve** — LlamaIndex hybrid search (semantic vectors + BM25 keywords, fused with RRF) returns top-k PDF chunks.
+2. **Retrieve** — Hybrid search (vector + BM25 → RRF wide shortlist → cross-encoder rerank) returns top-k PDF chunks.
 3. **Grade** — structured yes/no relevance check.
 4. **Rewrite** — if chunks are weak, improve the question and retrieve again.
 5. **Answer** — final grounded response.
@@ -119,7 +119,7 @@ Agent/teaching preferences (ASCII-first explanations): **[AGENTS.md](AGENTS.md)*
 
 ## Learn next
 
-- Optional cross-encoder **rerank** after hybrid top candidates.
+- ~~Optional cross-encoder **rerank** after hybrid~~ — **shipped** (default on; `RAG_RERANK=0` to skip).
 - Persist the vector index (disk or Chroma / Qdrant) instead of memory-only.
 - Stricter grade (answerable-from-context only, or min similarity).
 - Token-level LLM streaming on top of step SSE.

@@ -79,6 +79,37 @@ Record results in a simple sheet or `eval/results-YYYYMMDD.md`:
 | q01 | yes | yes | yes | |
 | … | | | | |
 
+## Trace retrieve step-by-step (learning / debug)
+
+See **every stage** of hybrid retrieve (vector → BM25 → RRF → **char-cap packaging** → tool string):
+
+```bash
+source .venv/bin/activate
+
+# By golden id (auto tracks must_have needles)
+python eval/trace_rag.py --ids q06
+
+# Replay the old packaging bug (NOTE cut at 800)
+python eval/trace_rag.py --ids q06 --cap 800
+
+# Free-form question + optional agent graph
+python eval/trace_rag.py "What is a binary market?" --agent
+
+# Full JSON dump
+python eval/trace_rag.py --ids q06 --json /tmp/trace-q06.json
+```
+
+| Step in log | Meaning |
+|-------------|---------|
+| `index` | In-memory nodes loaded |
+| `vector` / `bm25` | Each engine’s ranked pool |
+| `rrf_fuse` | Wide fused shortlist (`candidates_k`, default 20) |
+| `rerank` | Cross-encoder reorders pairs → `top_k` (default 8); `--no-rerank` to skip |
+| `package` | Per-passage `raw_chars` vs cap; **LOST** = needle in node but cut by cap |
+| `return` | Final tool string length + needles present? |
+
+Related aha: `docs/LEARNING_JOURNEY.md` Ch. 17 (packaging vs retrieval).
+
 ## Automated eval with Ragas
 
 Uses [Ragas](https://docs.ragas.io/en/stable/getstarted/rag_eval/) metrics on **our** hybrid agentic RAG (not a toy in-memory RAG):

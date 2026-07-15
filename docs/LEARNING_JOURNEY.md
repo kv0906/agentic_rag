@@ -64,7 +64,13 @@ It is not a product spec — it is a **learning log** tied to the code.
   Product polish: page citations, coach voice, gpt-5.4-mini
        │
        ▼
-  Day wrap — foundation + hybrid + eval baseline  ◄── today
+  Day wrap — foundation + hybrid + eval baseline
+       │
+       ▼
+  Fix eval gaps: q02 routing + q06 passage truncation
+       │
+       ▼
+  Tier-2 cross-encoder rerank after hybrid  ◄── today
 ```
 
 ---
@@ -746,7 +752,7 @@ Rerank is often the **largest quality jump after hybrid**. Hybrid alone is alrea
   ────────────              ────────────────────
   hybrid BM25 + vector      hybrid
   explicit RRF              RRF (same idea)
-  top-k → agent             + rerank before grade/answer
+  CE rerank → top-8         rerank before grade/answer  ◄── shipped
   no persist                + persist / vector DB later
   agentic grade loop        keep (agentic layer on top)
 ```
@@ -905,7 +911,7 @@ Embeddings stay **`text-embedding-3-small`** (retrieval, not “brain”).
 │   "the process" │     │   "the filing cabinet"       │
 ├─────────────────┤     ├──────────────────────────────┤
 │ decide (coach)  │     │ chunk / embed                │
-│ tool call       │────►│ vector + BM25 → RRF → top-8  │
+│ tool call       │────►│ vector + BM25 → RRF → CE → 8 │
 │ grade (judge)   │◄────│ Document + Page passages     │
 │ rewrite         │     │ in-memory VectorStoreIndex   │
 │ answer + next   │     └──────────────────────────────┘
@@ -915,7 +921,7 @@ Embeddings stay **`text-embedding-3-small`** (retrieval, not “brain”).
   UI: stream phases · tool summary · Sources (p.N · file)
   Eval: golden.jsonl + Ragas (recall / faith / factual)
 
-  2026 funnel:  hybrid (recall) → [rerank later] → LLM (generate)
+  2026 funnel:  hybrid (recall) → CE rerank (precision) → LLM (generate)
 ```
 
 | Term | In this project / learning |
@@ -930,19 +936,415 @@ Embeddings stay **`text-embedding-3-small`** (retrieval, not “brain”).
 | **Citation** | `(p. N)` + Sources strip; never Chunk N |
 | **Voice** | Answer → explain → related next steps |
 | **Tier 1 / 2** | Hybrid shipped / rerank still next ROI |
+| **Passage cap** | Max **characters** per passage in tool string (`rag.retrieve`); packaging, not rank |
+| **Packaging** | Did the fact survive from index → tool string → LLM? (≠ “did hybrid rank it?”) |
+| **Rerank (CE)** | Cross-encoder scores (query, passage) pairs; precision after hybrid recall |
+| **candidates_k** | Wide RRF shortlist (default 20) fed into CE before cutting to top_k |
+
+---
+
+## Chapter 17 — Fix eval gaps (q02 routing + q06 truncation)
+
+### Q: Fix q02 / q06, then re-run Ragas (watch factual_correctness)
+
+**Hai bug khác nhau (đừng gộp)**
+
+```
+  q02  "What is a binary market?"
+  ─────────────────────────────
+  Symptom: decide bỏ retrieve → trả lời kiến thức chung
+  Fix:     docs có sẵn thì BẮT BUỘC tool cho glossary / "what is X?"
+           (decide system + tool docstring)
+
+  q06  "Which market statuses appear on Live Markets?"
+  ───────────────────────────────────────────────────
+  Symptom: trả lời All / Active / Inactive (filter UI)
+  Real bug: NOTE "Live or Approved" nằm sau char 800 → bị cắt
+  Fix:     passage cap 800 → 2000 + generate: ưu tiên NOTE /
+           eligibility hơn filter chrome
+```
+
+---
+
+### Walkthrough q06 — từng bước (memory teaching style)
+
+Dùng lại khi debug “answer sai dù retrieval có vẻ hit”.
+
+#### Bước 1 — Câu hỏi eval
+
+```
+  Q: Which market statuses appear on the Live Markets page?
+
+  Gold (đáp án đúng trong playbook):
+  → Chỉ market Live hoặc Approved mới hiện
+  → Proposed / rejected thì không hiện
+```
+
+#### Bước 2 — Playbook viết gì (trang 6)
+
+```
+  ┌─ PAGE 6 (một đoạn index, ~955 ký tự) ─────────────────┐
+  │  Live Markets là gì…                                   │
+  │  Binary / Multi-outcome tabs…                          │
+  │  ...                                                   │
+  │  NOTE: Only markets that are Live or Approved          │  ◄── đáp án
+  │        appear… Proposed or rejected are not shown.     │
+  └────────────────────────────────────────────────────────┘
+```
+
+#### Bước 3 — Hybrid retrieve làm đúng phần “tìm”
+
+```
+  Câu hỏi ──► vector + BM25 ──► RRF ──► top-8
+
+  Trong top-8 có Passage từ page 6  ✓
+  (node trong index VẪN CÒN full text, kể cả NOTE)
+```
+
+→ **Retrieval quality = OK.** Lỗi không nằm ở hybrid.
+
+#### Bước 4 — Lỗi nằm ở bước “cắt cho gọn” (cũ)
+
+Trong `retrieve()`, trước đây:
+
+```
+  if độ dài > 800:
+      giữ 800 ký tự đầu + "…"
+```
+
+**800 / 2000 = số ký tự (characters)** tối đa **một passage** khi ghép tool string —  
+**không phải** token, không phải `top_k`, không phải RRF `k=60`.
+
+Vị trí thật của NOTE:
+
+```
+  ký tự:  1 ········· 800 ····· 862 ········· 955
+          | intro + tabs… |      | NOTE Live…     |
+                          ▲
+                          └── CẮT TẠI ĐÂY (cap 800)
+
+  1–800:   model thấy
+  862+:    NOTE  →  BỊ MẤT (không vào tool string)
+```
+
+ASCII so sánh:
+
+```
+  TRƯỚC (cap 800)
+  ════════════════
+  [Live Markets intro………… tabs………… Multi-outcome…]…
+                                                   ▲
+                                              hết 800, NOTE đã mất
+
+  SAU (cap 2000)
+  ══════════════
+  [Live Markets intro………… tabs………… NOTE Live or Approved…]
+                                                    ▲
+                                              NOTE còn nguyên
+```
+
+#### Bước 5 — Model trả lời dựa trên thứ nó **còn** thấy
+
+```
+  Tool string (cũ) có gì?
+    ✓  Active / Inactive  (filter UI, trang khác / đoạn khác)
+    ✗  Live or Approved   (NOTE bị cắt)
+
+  Model trung thành với context → trả lời:
+    "All / Active / Inactive"
+  → trông như “sai kiến thức”, thực ra là “thiếu bằng chứng”
+
+  Agent (cũ)
+  ──────────
+  context_thấy = [filter Active/Inactive]
+  gold_cần     = [Live or Approved]
+  → answer_must_have FAIL
+```
+
+#### Bước 6 — Vì sao chọn 2000 (không phải “vô hạn”)
+
+```
+  800    →  trang ngắn vẫn mất phần cuối (NOTE ở ~862)
+  ~1000  →  vừa khít page 6 (~955) — mong manh
+  2000   →  đủ cho 1 page ngắn + chút dư
+  ∞      →  tốt về đầy đủ, nhưng tool dump dài/ồn nếu chunk to
+
+  top_k = 8  →  tối đa ~ 8 × 2000 ký tự  (vẫn ổn cho model)
+```
+
+Cap ban đầu là **giới hạn UX** (đỡ spam UI/tool), **không phải** thuật toán rank.  
+Tăng 2000 = **sửa đóng gói (packaging)**, **không đổi hybrid**.
+
+---
+
+### Hai lớp chất lượng (đừng gộp một)
+
+```
+  1) Retrieval quality          2) Packaging quality
+  ────────────────────          ────────────────────
+  Node đúng có rank cao?        Fact còn được GỬI tới LLM?
+         │                              │
+         ▼                              ▼
+    hybrid / RRF / top_k          passage char cap
+    (q06: page 6 đã hit)          (q06 fail cũ: cắt mất NOTE)
+```
+
+| Số | Nghĩa |
+|----|--------|
+| **800 / 2000** | Cắt mỗi passage ở tối đa bao nhiêu **ký tự** (`_MAX_PASSAGE_CHARS` trong `rag.py`) |
+| **top_k = 8** | Lấy **bao nhiêu đoạn** sau RRF |
+| **RRF k = 60** | Hằng số trong `1/(60+rank)` |
+| **tokens** | Đơn vị model (khác; không 1:1 với ký tự) |
+
+| File | Change |
+|------|--------|
+| `backend/agent.py` | Decide: retrieve terms/UI when docs yes; generate: NOTE vs filters |
+| `backend/rag.py` | Soft cap `_MAX_PASSAGE_CHARS = 2000` (was 800) |
+| `eval/run_ragas.py` | `--ids`; safe PDF snapshot before `clear_index`; Passage split |
+
+**Ragas re-run (23 `should_retrieve` cases)**
+
+| Metric | Baseline (prev day) | After fix |
+|--------|--------------------:|----------:|
+| context_recall | ~0.85 | **0.93** |
+| faithfulness | ~0.78 | **0.80** |
+| factual_correctness | ~0.55 | **0.58** |
+| Routing checklist | 22/23 (96%) | **23/23 (100%)** |
+| Chunk must_have | 19/23 (83%) | **22/23 (96%)** |
+| Answer must_have | 19/23 (83%) | **21/23 (91%)** |
+
+q02 + q06 both pass routing / chunks / answer on the checklist.  
+Remaining answer misses: **q04** (must_have wording), **q15** (Group 1 numbers).  
+Report: `eval/results-ragas-20260715-085521.md`.
+
+**Takeaways (project memory)**
+
+1. “Wrong answer” đôi khi = **packaging** (truncation), không phải model dốt — check gold phrase **có trong tool string không**.  
+2. **800 / 2000 = max characters / passage** trong `retrieve()`, không phải tokens / top_k / RRF k.  
+3. Debug path: **rank OK?** → rồi mới hỏi **packaging còn giữ fact?**  
+4. Prefer walkthrough **từng bước + ASCII** khi giải thích packaging vs retrieval (style học tốt cho Van).
+
+---
+
+## Chapter 18 — Tier-2 cross-encoder rerank
+
+### Q: Implement rerank (cross-encoder) to polish the RAG flow
+
+**Why after hybrid?**
+
+```
+  hybrid (vector + BM25 + RRF)  =  RECALL  — “is the right page in the shortlist?”
+  cross-encoder                 =  PRECISION — “which of these best match the query?”
+
+  bi-encoder / BM25:  encode once, compare cheaply
+  cross-encoder:      read (query + passage) together → slower, smarter reorder
+```
+
+**Pipeline now (shipped)**
+
+```
+  query
+    │
+    ├─► VECTOR pool ─┐
+    │                ├─► RRF (candidates_k≈20) ─► CE rerank ─► top_k=8
+    └─► BM25 pool  ──┘         wide shortlist      pairs        to LLM
+                                    │
+                                    ▼
+                              PACKAGE (char cap) → tool string
+```
+
+| Knob | Default | Env |
+|------|---------|-----|
+| On/off | **on** | `RAG_RERANK=0` to skip |
+| Model | `cross-encoder/ms-marco-MiniLM-L-6-v2` | `RERANK_MODEL` |
+| RRF width | 20 | `RERANK_CANDIDATES` |
+| To LLM | 8 | `DEFAULT_TOP_K` / `--top-k` |
+
+| Code | Role |
+|------|------|
+| `backend/rag.py` | `_cross_encoder_rerank`, lazy `SentenceTransformerRerank` |
+| `eval/trace_rag.py` | `rerank` step + `--no-rerank` A/B |
+| deps | `torch`, `sentence-transformers` |
+
+**Trace check**
+
+```bash
+python eval/trace_rag.py --ids q06              # CE on
+python eval/trace_rag.py --ids q06 --no-rerank  # hybrid only
+```
+
+Look at **RERANK** step: pages reordered vs RRF; gold page should stay high (often #1).
+
+**Takeaway:** Tier 2 = hybrid for recall + CE for precision. Don’t rerank the whole corpus — only the shortlist.
+
+### Q: Explain like a PM / CEO — rerank, cross-encoder, why local HF model?
+
+**Business problem (one picture)**
+
+```
+  User asks:  “Which market statuses appear on Live Markets?”
+
+  Library has ~45 pages of PDF text.
+
+  Job of search:
+    1) Don’t miss the right page          ← RECALL
+    2) Put the best page first            ← PRECISION
+    3) Only send a short list to the LLM  ← COST / CLARITY
+```
+
+If you send the LLM 30 mediocre snippets → more $ and more confusion.  
+If you send 8 great ones → better answers, often cheaper.
+
+---
+
+**Brain A — Hybrid (Tier 1 you already had)**
+
+```
+  VECTOR (meaning)     “Live Markets statuses” ≈ similar pages
+  BM25 (keywords)      exact words: status, Live, markets
+           │
+           ▼
+  RRF = merge two ranked lists into one shortlist (~20)
+```
+
+**Office analogy:** Two interns each bring folders that *might* be relevant.  
+You merge into one pile. Fast. Good at **not missing** the right folder.
+
+**Limitation:** They score “seems related,” not “best answers *this* question.”
+
+---
+
+**Brain B — Rerank with a cross-encoder (Tier 2)**
+
+```
+  Shortlist of ~20 passages
+           │
+           ▼
+  For EACH candidate, read TOGETHER:
+
+     [ question ]  +  [ this passage ]
+
+           │
+           ▼
+  Score: how well does THIS passage answer THIS question?
+           │
+           ▼
+  Keep top 8 → send to the “answer writer” (chat LLM)
+```
+
+**Office analogy:** After interns bring 20 folders, a **senior analyst** opens each folder next to the question and ranks: “This one answers it; that one is only vaguely related.”
+
+**Rerank** = re-order a **small shortlist** so the best evidence is #1–#8.  
+Not “search the whole company drive again.”
+
+---
+
+**What “cross-encoder” means (no jargon wall)**
+
+| | **Bi-encoder** (vector search) | **Cross-encoder** (rerank) |
+|--|--------------------------------|----------------------------|
+| How | Embed query once, embed docs once, compare vectors | Feed **query + doc as one pair** into one model |
+| Speed | Very fast on many docs | Slower — only use on ~20, not whole library |
+| Quality on “does this answer the Q?” | Good enough to shortlist | Usually **better precision** |
+| Like | Search “find related” | Human reading Q and paragraph together |
+
+```
+  Bi-encoder:     Q ──► vec     Doc ──► vec     →  distance
+  Cross-encoder:  [Q | Doc] ──► one score for the pair
+```
+
+---
+
+**Why a local model from Hugging Face?**
+
+```
+  Answer LLM (gpt-5.4-mini)              = cloud OpenAI · $ per call · “writer”
+  Embeddings (text-embedding-3-small)    = cloud OpenAI · $ per call · vectors
+
+  Cross-encoder (ms-marco MiniLM)        = small specialist ranker
+                                           download ONCE from Hugging Face Hub
+                                           runs on YOUR machine (CPU/GPU)
+                                           no HF API key for this setup
+```
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **Local CE (what we ship)** | Cheap after download; no per-pair OpenAI $; private; predictable | Needs torch + disk; first download; local CPU |
+| **Call GPT to score each pair** | No local install | 20 passages × API = slow + expensive |
+| **No rerank** | Simplest | More junk in top-8 → weaker answers / more rewrite |
+
+**Product framing:** CE is a **cheap specialist ranker**, not the CEO writer.  
+Hugging Face Hub = **app store for open weights** — we pull a standard MS MARCO reranker once, then run offline.  
+(Not “call Hugging Face cloud on every question.”)
+
+```
+  Hugging Face Hub
+        │  download once
+        ▼
+  Mac / server: sentence-transformers + torch
+        │  every user question
+        ▼
+  Score ~20 pairs locally (ms–hundreds of ms)
+        │
+        ▼
+  Still call OpenAI for: embeddings + final answer only
+```
+
+---
+
+**End-to-end product story**
+
+```
+  UPLOAD PDF          →  filing cabinet (chunks + vectors)
+  USER QUESTION
+        │
+        ▼
+  FAST WIDE NET       hybrid: vector + keyword + RRF     (~20)
+        │
+        ▼
+  QUALITY FILTER      local cross-encoder rerank         (top 8)
+        │
+        ▼
+  SMART WRITER        GPT answers from those 8 only
+        │
+        ▼
+  USER sees grounded answer + page cites
+```
+
+**Roadmap language (board / PRD)**
+
+```
+  Tier 1  Hybrid only           good / cheap     ← shipped earlier
+  Tier 2  Hybrid + local CE     better precision ← shipped now
+  Tier 3  + eval / persist DB   production scale
+```
+
+**One sentence for a deck:**  
+*We cast a wide, cheap net, then use a small open model on the machine to put the best 8 evidence cards on top before the expensive language model writes the answer.*
+
+**Remember (PM cheat sheet)**
+
+1. **Hybrid** finds candidates (don’t miss the right page).  
+2. **Rerank** reorders so the best page is first.  
+3. **Cross-encoder** judges **question + passage together**.  
+4. **Local HF model** = free-to-run ranker on your box; OpenAI stays for embed + write.  
+5. **Why bother:** better evidence → better answers, less noise, often fewer agent retries — without paying GPT to score every snippet.
 
 ---
 
 ## Suggested re-read order
 
-1. This file — **Ch. 9–16** for today’s arc; 1–8 for foundation  
+1. This file — **Ch. 18** (rerank + CEO explainer); **Ch. 17** packaging; 9–16 hybrid/eval; 1–8 foundation  
 2. `README.md` (how to run)  
-3. `backend/rag.py` — hybrid + `DEFAULT_TOP_K`  
+3. `backend/rag.py` — hybrid + CE + `MAX_PASSAGE_CHARS`  
 4. `backend/agent.py` — prompts (decide / grade / rewrite / generate)  
 5. `src/lib/citations.ts` + chat page (Sources UX)  
-6. `eval/README.md` + re-run `python eval/run_ragas.py --only-retrieve`  
+6. `eval/README.md` + `python eval/trace_rag.py --ids q06`  
 
-**UI smoke:** re-upload PDF after restart → ask playbook Q → expect `(p. N)` cites + Sources tokens + next-step questions.
+**UI smoke:** re-upload PDF after restart → ask playbook Q → expect `(p. N)` cites + Sources tokens + next-step questions.  
+**Targeted smoke:** `python eval/run_ragas.py --ids q02,q06 --skip-ragas`  
+**Step-by-step retrieve log:** `python eval/trace_rag.py --ids q06`  
+(replay old bug: `--cap 800`; full graph: `--agent`; JSON: `--json /tmp/t.json`)
 
 ---
 
@@ -957,11 +1359,13 @@ Embeddings stay **`text-embedding-3-small`** (retrieval, not “brain”).
 - [x] Page citations + Sources UI  
 - [x] Coach-style answer + next steps  
 - [x] Model → gpt-5.4-mini  
+- [x] Fix q02 force-retrieve + q06 Live/Approved (truncation + prompts)  
+- [x] Re-run Ragas after those tweaks  
+- [x] Tier-2 cross-encoder **rerank** after hybrid  
 
 ### Next sessions (priority order)
-- [ ] Fix eval fails: **q02** force retrieve on terms, **q06** Live/Approved vs Active/Inactive  
-- [ ] Re-run Ragas after prompt/retrieval tweaks (track factual_correctness)  
-- [ ] **Tier 2:** cross-encoder **rerank** after hybrid (best quality ROI)  
+- [ ] Optional: tighten **q04** / **q15** answer must_haves (wording / Group 1 numbers)  
+- [ ] Re-run Ragas after CE (compare factual_correctness vs hybrid-only)  
 - [ ] Persist index (disk / vector DB)  
 - [ ] Optional: click source token → expand passage preview  
 - [ ] Multi-PDF metadata filters  
@@ -1020,9 +1424,15 @@ Embeddings stay **`text-embedding-3-small`** (retrieval, not “brain”).
 46. Core system prompts inventory  
 47. Coach voice: explain + related next steps  
 48. Finalize LEARNING_JOURNEY for the day (Ch. 14–16)  
+49. Fix q02 (force retrieve on terms) + q06 (Live/Approved vs Active/Inactive)  
+50. Re-run Ragas; document Ch. 17 (truncation aha + score delta)  
+51. Clarify: 800/2000 = max **characters** per passage (packaging ≠ rank)  
+52. Lock Ch. 17 walkthrough Bước 1–6 (ASCII) as project teaching memory  
+53. Implement Tier-2 cross-encoder rerank (Ch. 18)  
+54. Document CEO/PM explainer: rerank, cross-encoder, why local HF model  
 
 ---
 
-*Last updated: end of a big learning day — hybrid retrieval shipped, eval baseline with Ragas, product polish (citations + coach answers), model gpt-5.4-mini. Next natural build: Tier-2 rerank and fixing q02/q06-class eval gaps. Update when a new “aha” changes the mental model.*
+*Last updated: Ch. 18 includes PM/CEO mental model (hybrid recall → CE precision → local HF ranker). Next: optional Ragas A/B vs --no-rerank, or index persist.*
 
 
