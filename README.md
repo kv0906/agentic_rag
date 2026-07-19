@@ -83,6 +83,17 @@ Next.js rewrites `/api/*` → `http://127.0.0.1:8000/api/*`.
 3. Watch tool calls: `retrieve_documents`, optional `rewrite_question`, then the answer.
 4. Say “hello” — the agent can reply **without** retrieving.
 5. Open the side panel for indexed docs + how the graph works.
+6. Switch **Orchestrator** in the composer — a second LangGraph agent calls `ask_docs` → the same agentic RAG specialist (`POST /api/orchestrate/stream`).
+
+### Multi-agent (orchestrator) CLI
+
+With the API running:
+
+```bash
+source .venv/bin/activate
+cd backend
+python orchestrator.py "What is a binary market?"
+```
 
 ## Project layout
 

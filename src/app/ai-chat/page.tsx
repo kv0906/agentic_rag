@@ -46,6 +46,10 @@ import {EmptyState} from '@astryxdesign/core/EmptyState';
 import {Banner} from '@astryxdesign/core/Banner';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {useResizable, ResizeHandle} from '@astryxdesign/core/Resizable';
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from '@astryxdesign/core/SegmentedControl';
 
 import {
   DocumentTextIcon,
@@ -69,6 +73,7 @@ import {
   fetchHealth,
   uploadPdf,
   type AgentStep,
+  type ChatMode,
   type DocumentMeta,
 } from '@/lib/api';
 
@@ -146,20 +151,31 @@ const HOW_IT_WORKS = `## Agentic RAG
 
 This chat is backed by a **LangGraph** agent and a **LlamaIndex** retriever.
 
-### Graph path
+### Mode: Direct RAG
 
 1. **generate_query_or_respond** — model decides whether to call \`retrieve_documents\` or answer directly
-2. **retrieve** — LlamaIndex semantic search over your PDF chunks
+2. **retrieve** — LlamaIndex hybrid search over your PDF chunks
 3. **grade_documents** — structured yes/no relevance check
-4. **rewrite_question** — improve the query if chunks look weak (capped retries)
+4. **rewrite_question** — improve the query if chunks look weak
 5. **generate_answer** — final grounded answer
+
+### Mode: Orchestrator
+
+Multi-agent path over the same specialist:
+
+\`\`\`
+you → orchestrator → ask_docs → agentic RAG → answer
+\`\`\`
+
+The orchestrator does **not** retrieve itself. It calls \`ask_docs\` (same contract as \`POST /api/chat\`).
 
 ### Try it
 
 - Upload a short PDF with the paperclip
+- Switch **Direct** vs **Orchestrator** above the composer
 - Ask something that needs the document
-- Watch tool calls appear on the assistant message
-- Say *hello* — the agent can reply without retrieving
+- Watch tool calls: \`retrieve_documents\` (direct) or \`ask_docs\` (orchestrator)
+- Say *hello* — either path can reply without tools
 `;
 
 type ToolCallUi = {
@@ -182,6 +198,8 @@ type UiMessage = {
   /** Live agent phase while streaming */
   phaseLabel?: string | null;
   isStreaming?: boolean;
+  /** Which path produced this assistant turn */
+  mode?: ChatMode;
 };
 
 function nodeLabel(node: string): string {
@@ -194,9 +212,21 @@ function nodeLabel(node: string): string {
       return 'rewrite';
     case 'generate_answer':
       return 'answer';
+    case 'orchestrator':
+      return 'orchestrator';
+    case 'tools':
+      return 'ask_docs';
     default:
       return node;
   }
+}
+
+function previewToolResult(name: string, content: string): string {
+  if (name.includes('retrieve')) {
+    return summarizeRetrieveForToolUi(content);
+  }
+  // ask_docs (and similar) return prose, not passage dumps
+  return previewText(content, 280);
 }
 
 function graphPathFromSteps(steps: AgentStep[]): string {
@@ -238,13 +268,17 @@ function applyStepToToolCalls(
     }
   }
 
-  if (step.type === 'tool' || step.node === 'retrieve') {
-    const preview = summarizeRetrieveForToolUi(step.content || '');
+  if (step.type === 'tool' || step.node === 'retrieve' || step.node === 'tools') {
+    const toolName = step.tool_name || 'tool';
+    const preview = previewToolResult(toolName, step.content || '');
     const last = [...calls]
       .reverse()
       .find(
         c =>
-          (c.name.includes('retrieve') || c.name === step.tool_name) &&
+          (c.name === toolName ||
+            c.name.includes('retrieve') ||
+            c.name === 'ask_docs' ||
+            c.name === step.tool_name) &&
           c.status !== 'complete',
       );
     if (last) {
@@ -253,9 +287,9 @@ function applyStepToToolCalls(
     } else {
       calls.push({
         key: `tool-${calls.length}-${Date.now()}`,
-        name: step.tool_name || 'retrieve_documents',
+        name: toolName || 'retrieve_documents',
         status: 'complete',
-        target: 'retrieval result',
+        target: toolName === 'ask_docs' ? 'document specialist' : 'retrieval result',
         resultDetail: preview,
       });
     }
@@ -274,9 +308,13 @@ function applyStepToToolCalls(
     });
   }
 
-  if (step.node === 'generate_answer') {
+  if (step.node === 'generate_answer' || step.node === 'orchestrator') {
     for (const c of calls) {
       if (c.status === 'running' || c.status === 'pending') {
+        // Don't force-complete ask_docs until its tool result lands
+        if (step.node === 'orchestrator' && c.name === 'ask_docs' && !c.resultDetail) {
+          continue;
+        }
         c.status = 'complete';
       }
     }
@@ -400,6 +438,7 @@ export default function AIChatConversationTemplate() {
   const [docs, setDocs] = useState<DocumentMeta[]>([]);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [chatMode, setChatMode] = useState<ChatMode>('direct');
   const [isChatting, setIsChatting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -537,6 +576,7 @@ export default function AIChatConversationTemplate() {
       const now = new Date().toISOString();
       const assistantId = crypto.randomUUID();
       const collectedSteps: AgentStep[] = [];
+      const mode = chatMode;
 
       setMessages(prev => [
         ...prev,
@@ -551,9 +591,13 @@ export default function AIChatConversationTemplate() {
           role: 'assistant',
           content: '',
           createdAt: now,
-          phaseLabel: 'Starting agent…',
+          phaseLabel:
+            mode === 'orchestrator'
+              ? 'Starting orchestrator…'
+              : 'Starting agent…',
           isStreaming: true,
           toolCalls: [],
+          mode,
         },
       ]);
 
@@ -564,90 +608,107 @@ export default function AIChatConversationTemplate() {
       };
 
       try {
-        await chatStream(text, event => {
-          if (event.type === 'phase') {
-            patchAssistant({phaseLabel: event.label});
-            // When entering retrieve, flip any pending tool to running
-            if (event.node === 'retrieve') {
+        await chatStream(
+          text,
+          event => {
+            if (event.type === 'phase') {
+              patchAssistant({phaseLabel: event.label});
+              // When entering tool/retrieve, flip any pending tool to running
+              if (event.node === 'retrieve' || event.node === 'tools') {
+                setMessages(prev =>
+                  prev.map(m => {
+                    if (m.id !== assistantId) return m;
+                    const toolCalls = (m.toolCalls ?? []).map(c =>
+                      c.status === 'pending'
+                        ? {...c, status: 'running' as const}
+                        : c,
+                    );
+                    return {...m, toolCalls, phaseLabel: event.label};
+                  }),
+                );
+              }
+              return;
+            }
+
+            if (event.type === 'step') {
+              collectedSteps.push(event.step);
               setMessages(prev =>
                 prev.map(m => {
                   if (m.id !== assistantId) return m;
-                  const toolCalls = (m.toolCalls ?? []).map(c =>
-                    c.status === 'pending' ? {...c, status: 'running' as const} : c,
+                  const toolCalls = applyStepToToolCalls(
+                    m.toolCalls,
+                    event.step,
                   );
-                  return {...m, toolCalls, phaseLabel: event.label};
+                  // Final AI content mid-stream (no open tool calls)
+                  let content = m.content;
+                  if (
+                    event.step.type === 'ai' &&
+                    event.step.content &&
+                    !event.step.tool_calls?.length &&
+                    (event.step.node === 'generate_answer' ||
+                      event.step.node === 'generate_query_or_respond' ||
+                      event.step.node === 'orchestrator')
+                  ) {
+                    content = event.step.content;
+                  }
+                  let sources = m.sources;
+                  if (
+                    (event.step.type === 'tool' ||
+                      event.step.node === 'retrieve') &&
+                    event.step.content &&
+                    (event.step.tool_name || '').includes('retrieve')
+                  ) {
+                    const parsed = parsePassagesFromRetrieve(event.step.content);
+                    if (parsed.length) sources = parsed;
+                  }
+                  return {
+                    ...m,
+                    toolCalls,
+                    content,
+                    sources,
+                    graphPath: graphPathFromSteps(collectedSteps) || m.graphPath,
+                  };
                 }),
               );
+              return;
             }
-            return;
-          }
 
-          if (event.type === 'step') {
-            collectedSteps.push(event.step);
-            setMessages(prev =>
-              prev.map(m => {
-                if (m.id !== assistantId) return m;
-                const toolCalls = applyStepToToolCalls(m.toolCalls, event.step);
-                // Direct final AI content mid-stream (no tools)
-                let content = m.content;
+            if (event.type === 'error') {
+              throw new Error(event.message);
+            }
+
+            if (event.type === 'done') {
+              let sources: PassageSource[] | undefined;
+              let calls: ToolCallUi[] = [];
+              for (const s of event.steps) {
+                calls = applyStepToToolCalls(calls, s);
                 if (
-                  event.step.type === 'ai' &&
-                  event.step.content &&
-                  !event.step.tool_calls?.length &&
-                  (event.step.node === 'generate_answer' ||
-                    event.step.node === 'generate_query_or_respond')
+                  (s.type === 'tool' || s.node === 'retrieve') &&
+                  s.content &&
+                  (s.tool_name || '').includes('retrieve')
                 ) {
-                  content = event.step.content;
-                }
-                let sources = m.sources;
-                if (
-                  (event.step.type === 'tool' || event.step.node === 'retrieve') &&
-                  event.step.content
-                ) {
-                  const parsed = parsePassagesFromRetrieve(event.step.content);
+                  const parsed = parsePassagesFromRetrieve(s.content);
                   if (parsed.length) sources = parsed;
                 }
-                return {
-                  ...m,
-                  toolCalls,
-                  content,
-                  sources,
-                  graphPath: graphPathFromSteps(collectedSteps) || m.graphPath,
-                };
-              }),
-            );
-            return;
-          }
-
-          if (event.type === 'error') {
-            throw new Error(event.message);
-          }
-
-          if (event.type === 'done') {
-            let sources: PassageSource[] | undefined;
-            let calls: ToolCallUi[] = [];
-            for (const s of event.steps) {
-              calls = applyStepToToolCalls(calls, s);
-              if ((s.type === 'tool' || s.node === 'retrieve') && s.content) {
-                const parsed = parsePassagesFromRetrieve(s.content);
-                if (parsed.length) sources = parsed;
               }
-            }
-            for (const c of calls) {
-              if (c.status !== 'complete' && c.status !== 'error') {
-                c.status = 'complete';
+              for (const c of calls) {
+                if (c.status !== 'complete' && c.status !== 'error') {
+                  c.status = 'complete';
+                }
               }
+              patchAssistant({
+                content: event.answer,
+                phaseLabel: null,
+                isStreaming: false,
+                graphPath: graphPathFromSteps(event.steps) || undefined,
+                sources,
+                toolCalls: calls.length ? calls : undefined,
+              });
             }
-            patchAssistant({
-              content: event.answer,
-              phaseLabel: null,
-              isStreaming: false,
-              graphPath: graphPathFromSteps(event.steps) || undefined,
-              sources,
-              toolCalls: calls.length ? calls : undefined,
-            });
-          }
-        });
+          },
+          undefined,
+          mode,
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Chat failed';
         setError(msg);
@@ -669,7 +730,7 @@ export default function AIChatConversationTemplate() {
         );
       }
     },
-    [isChatting],
+    [isChatting, chatMode],
   );
 
   return (
@@ -718,7 +779,11 @@ export default function AIChatConversationTemplate() {
                             ? 'Ask about your PDF'
                             : 'Upload a PDF to start'
                         }
-                        description="Agentic RAG: LangGraph decides when to retrieve; LlamaIndex indexes your PDF."
+                        description={
+                          chatMode === 'orchestrator'
+                            ? 'Orchestrator mode: a LangGraph manager calls ask_docs → your agentic RAG specialist.'
+                            : 'Direct mode: LangGraph decides when to retrieve; LlamaIndex indexes your PDF.'
+                        }
                         actions={
                           <Button
                             label="Upload PDF"
@@ -739,7 +804,9 @@ export default function AIChatConversationTemplate() {
                       onSubmit={v => void handleSubmit(v)}
                       placeholder={
                         docs.length
-                          ? 'Ask anything about your PDF…'
+                          ? chatMode === 'orchestrator'
+                            ? 'Orchestrator will call ask_docs…'
+                            : 'Ask anything about your PDF…'
                           : 'Upload a PDF, or say hello'
                       }
                       isDisabled={isChatting || isUploading}
@@ -760,6 +827,21 @@ export default function AIChatConversationTemplate() {
                       }
                       headerActions={
                         <>
+                          <SegmentedControl
+                            label="Chat mode"
+                            size="sm"
+                            value={chatMode}
+                            onChange={v => setChatMode(v as ChatMode)}
+                            isDisabled={isChatting}>
+                            <SegmentedControlItem
+                              value="direct"
+                              label="Direct"
+                            />
+                            <SegmentedControlItem
+                              value="orchestrator"
+                              label="Orchestrator"
+                            />
+                          </SegmentedControl>
                           <Button
                             label="Attach PDF"
                             variant="ghost"
@@ -781,7 +863,9 @@ export default function AIChatConversationTemplate() {
                       }
                       footerActions={
                         <Text type="supporting" color="secondary">
-                          LangGraph + LlamaIndex
+                          {chatMode === 'orchestrator'
+                            ? 'Orchestrator → ask_docs → RAG'
+                            : 'Direct RAG · LangGraph + LlamaIndex'}
                         </Text>
                       }
                     />
@@ -836,7 +920,16 @@ export default function AIChatConversationTemplate() {
                           <ChatMessage
                             key={m.id}
                             sender="assistant"
-                            avatar={<Avatar name="Agent" size="small" />}>
+                            avatar={
+                              <Avatar
+                                name={
+                                  m.mode === 'orchestrator'
+                                    ? 'Orchestrator'
+                                    : 'Agent'
+                                }
+                                size="small"
+                              />
+                            }>
                             {m.toolCalls && m.toolCalls.length > 0 ? (
                               <ChatToolCalls
                                 defaultIsExpanded
@@ -878,8 +971,13 @@ export default function AIChatConversationTemplate() {
                               footer={
                                 <Text type="supporting" color="secondary">
                                   {m.isStreaming
-                                    ? m.phaseLabel || 'Agent working…'
-                                    : 'Agent'}
+                                    ? m.phaseLabel ||
+                                      (m.mode === 'orchestrator'
+                                        ? 'Orchestrator working…'
+                                        : 'Agent working…')
+                                    : m.mode === 'orchestrator'
+                                      ? 'Orchestrator'
+                                      : 'Agent'}
                                 </Text>
                               }
                             />

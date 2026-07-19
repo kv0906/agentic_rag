@@ -87,27 +87,35 @@ export async function chat(message: string): Promise<ChatResponse> {
   return res.json();
 }
 
+/** Chat mode: direct agentic RAG vs multi-agent orchestrator. */
+export type ChatMode = "direct" | "orchestrator";
+
+/**
+ * Prefer direct backend URL in dev so Next rewrites don't buffer SSE.
+ */
+function streamEndpoint(mode: ChatMode = "direct"): string {
+  const path =
+    mode === "orchestrator" ? "/api/orchestrate/stream" : "/api/chat/stream";
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    return (
+      (process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
+        "http://127.0.0.1:8000") + path
+    );
+  }
+  return path;
+}
+
 /**
  * Stream agent phases + steps via SSE (POST body).
  * Calls `onEvent` for each parsed event until done/error.
  */
-/** Prefer direct backend URL in dev so Next rewrites don't buffer SSE. */
-function streamEndpoint(): string {
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    return (
-      process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
-      "http://127.0.0.1:8000"
-    ) + "/api/chat/stream";
-  }
-  return "/api/chat/stream";
-}
-
 export async function chatStream(
   message: string,
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
+  mode: ChatMode = "direct",
 ): Promise<void> {
-  const res = await fetch(streamEndpoint(), {
+  const res = await fetch(streamEndpoint(mode), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

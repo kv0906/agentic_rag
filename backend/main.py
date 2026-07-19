@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent import iter_agent_events, run_agent
+from orchestrator import iter_orchestrator_events, run_orchestrator
 from rag import DATA_DIR, clear_index, has_index, ingest_pdf, list_documents
 
 # Load .env from project root and backend/
@@ -135,6 +136,56 @@ def chat_stream(body: ChatRequest):
     def event_bytes():
         try:
             for event in iter_agent_events(question):
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False)
+            yield f"data: {err}\n\n"
+
+    return StreamingResponse(
+        event_bytes(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/orchestrate", response_model=ChatResponse)
+def orchestrate(body: ChatRequest):
+    """Multi-agent path: orchestrator → ask_docs → agentic RAG specialist."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=400,
+            detail="OPENAI_API_KEY is not set. Add it to a .env file in the project root.",
+        )
+
+    try:
+        result = run_orchestrator(body.message.strip())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Orchestrator failed: {exc}"
+        ) from exc
+
+    return ChatResponse(answer=result["answer"], steps=result["steps"])
+
+
+@app.post("/api/orchestrate/stream")
+def orchestrate_stream(body: ChatRequest):
+    """SSE stream for orchestrator → ask_docs (same event shapes as /api/chat/stream)."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=400,
+            detail="OPENAI_API_KEY is not set. Add it to a .env file in the project root.",
+        )
+
+    question = body.message.strip()
+
+    def event_bytes():
+        try:
+            for event in iter_orchestrator_events(question):
                 payload = json.dumps(event, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
         except Exception as exc:  # noqa: BLE001
