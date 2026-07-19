@@ -64,6 +64,9 @@ def retrieve_documents(query: str) -> str:
     Hybrid retrieval (vector + BM25 + RRF) then cross-encoder rerank returns
     ~5–10 chunks for grading and answering; grade/rewrite remains the safety
     net if context is weak.
+
+    When RAG_CONTEXTUAL=1 at upload time, chunks were augmented with
+    short document-level context before embedding/BM25 (Contextual Retrieval).
     """
     return retrieve(query)
 

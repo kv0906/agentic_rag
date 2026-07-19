@@ -2,8 +2,14 @@
 
 This is the "retrieval" half of agentic RAG:
 
-  Ingest:  PDF → load → chunk → embed → VectorStoreIndex (+ docstore for BM25)
+  Ingest:  PDF → load → chunk → [optional: contextualize] → embed → VectorStoreIndex (+ docstore for BM25)
   Query:   vector + BM25 → RRF fuse (wide) → cross-encoder rerank → top-k
+
+Contextual Retrieval (RAG_CONTEXTUAL=1):
+  At ingest we use a cheap LLM to write a short "situating context" for every chunk
+  based on the whole document. We then embed + BM25 the *augmented* text
+  (Contextual Embeddings + Contextual BM25). The clean original chunk is what
+  we send to the final LLM.
 
 LangGraph still owns the agent loop; this module only returns passage text.
 """
@@ -24,6 +30,10 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.retrievers.bm25 import BM25Retriever
 from pypdf import PdfReader
+
+# For Contextual Retrieval (learning implementation)
+from functools import lru_cache
+from openai import OpenAI as RawOpenAIClient  # raw client for learning prompt caching behavior
 
 # Project-local storage for uploaded PDFs
 DATA_DIR = Path(__file__).resolve().parent / "data" / "uploads"
@@ -65,6 +75,157 @@ def _env_flag(name: str, default: bool = True) -> bool:
     if raw is None or not str(raw).strip():
         return default
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+# ---------------------------------------------------------------------------
+# Contextual Retrieval (Anthropic "Contextual Embeddings" + Contextual BM25)
+# One-time ingest augmentation: prepend a short "situating" context to each chunk
+# so both the embedding and the BM25 index see document-level context.
+# Toggle with RAG_CONTEXTUAL=1
+# ---------------------------------------------------------------------------
+
+def contextual_enabled() -> bool:
+    """Enable Contextual Retrieval (generate situating context per chunk at ingest)."""
+    return _env_flag("RAG_CONTEXTUAL", default=False)
+
+
+# ---------------------------------------------------------------------------
+# PROMPT CACHING EXPLANATION (for learning Contextual Retrieval)
+# ---------------------------------------------------------------------------
+#
+# What is Prompt Caching?
+#
+# When you call an LLM, you pay for every token in the prompt.
+# In Contextual Retrieval, the "prompt" for each chunk looks like this:
+#
+#   [VERY LONG] full document (8k-20k tokens)
+#   + short instruction
+#   + the current chunk
+#
+# If you do this naively for 100 chunks of the same document, you re-send
+# the full document 100 times → you pay for the document ~100x.
+#
+# Prompt caching solves exactly this:
+# - First call for a document: "Write this big prefix into cache" (you pay full price).
+# - Next calls for other chunks of the *same* document:
+#     The provider sees "I already have this exact prefix cached"
+#     → it charges you only ~10% (or less) for the cached part.
+#
+# This is why the article says Contextual Retrieval becomes cheap *only* with caching.
+#
+# Anthropic (what the article uses):
+#   - Explicit control with cache_control on the document part.
+#   - You get back in usage:
+#       cache_creation_input_tokens   (first time, expensive)
+#       cache_read_input_tokens       (later, 90% discount)
+#
+# OpenAI (what we use here):
+#   - Automatic prefix caching on long, stable prefixes (for gpt-4o family etc.).
+#   - In the usage object you can sometimes see prompt_tokens_details.cached_tokens.
+#   - Not as explicit as Anthropic, but the idea is the same:
+#     Make the long document appear as a stable prefix at the beginning of the conversation.
+#
+# Critical rule for cache hits:
+#   You must process chunks of the SAME document one after another
+#   (with the exact same document text as the prefix).
+#   Our _create_contextual_documents already does this per PDF → good.
+# ---------------------------------------------------------------------------
+
+
+def _situate_context(full_document: str, chunk: str, doc_name: str = "") -> tuple[str, dict]:
+    """
+    Generate situating context for one chunk.
+
+    Returns: (context_text, usage_info)
+
+    We deliberately use the RAW OpenAI client (not the LangChain wrapper) for this step.
+    Why? Because prompt caching is all about message structure and prefix stability.
+    The wrapper hides the details we want to learn.
+
+    Key technique for caching:
+      - The LONG document is sent as the FIRST message (stable prefix).
+      - The small per-chunk instruction comes after.
+      - When processing many chunks of the *same* document in sequence,
+        the LLM provider can recognize the repeated prefix and cache it.
+    """
+    import os
+
+    model_name = (
+        os.getenv("OPENAI_CONTEXTUAL_MODEL")
+        or os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+    ).strip() or "gpt-5.4-mini"
+
+    client = RawOpenAIClient()
+
+    # Structure optimized for prefix caching:
+    # Message 0 = the big, repeating document (this is what gets cached)
+    # Message 1 = the small varying part (chunk + instruction)
+    messages = [
+        {
+            "role": "user",
+            "content": f"<document>\n{full_document[:12000]}\n</document>",
+        },
+        {
+            "role": "user",
+            "content": (
+                "Here is the chunk we want to situate within the whole document\n"
+                f"<chunk>\n{chunk}\n</chunk>\n\n"
+                "Please give a short succinct context to situate this chunk within the overall document "
+                "for the purposes of improving search retrieval of the chunk. "
+                "Answer only with the succinct context and nothing else."
+            ),
+        },
+    ]
+
+    try:
+        # Support both old models (max_tokens) and new models like gpt-5.4-mini / o-series (max_completion_tokens)
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=0.0,
+                max_completion_tokens=300,
+            )
+        except Exception as param_err:
+            if "max_completion_tokens" in str(param_err).lower() or "max_tokens" in str(param_err).lower():
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.0,
+                    max_tokens=300,
+                )
+            else:
+                raise
+
+        context_text = (response.choices[0].message.content or "").strip()
+
+        usage = response.usage or {}
+        usage_info = {
+            "model": model_name,
+            "input_tokens": getattr(usage, "prompt_tokens", 0),
+            "output_tokens": getattr(usage, "completion_tokens", 0),
+            "total_tokens": getattr(usage, "total_tokens", 0),
+            "cache_hit": "unknown",
+        }
+
+        # Try to detect OpenAI cached tokens (available on some models/responses)
+        try:
+            details = getattr(usage, "prompt_tokens_details", None)
+            if details and getattr(details, "cached_tokens", 0):
+                usage_info["cached_tokens"] = details.cached_tokens
+                usage_info["cache_hit"] = True
+            elif "cached" in str(usage).lower():
+                usage_info["cache_hit"] = "possible"
+        except Exception:
+            pass
+
+        return context_text, usage_info
+
+    except Exception as exc:
+        print(f"[contextual] Call failed for a chunk in {doc_name}: {exc}")
+        # Graceful fallback so the whole ingest doesn't die while learning
+        fallback = f"Part of document about {doc_name or 'the uploaded file'}."
+        return fallback, {"error": str(exc), "input_tokens": 0, "output_tokens": 0}
 
 
 def rerank_enabled() -> bool:
@@ -175,27 +336,139 @@ def _load_pdf_documents(file_path: Path, original_name: str) -> list[Document]:
     return documents
 
 
+def _create_contextual_documents(
+    page_documents: list[Document], original_name: str
+) -> list[Document]:
+    """Contextual Retrieval step.
+
+    1. Build a "full document" view (with page markers so the LLM understands structure).
+    2. Re-chunk the full text (same splitter settings).
+    3. For each chunk, ask the LLM for a short situating context.
+    4. Return Documents whose .text = context + "\n\n" + original_chunk
+       (this text is what gets embedded + indexed for BM25 — the key for better retrieval).
+    We only put small fields + the short "context" into metadata.
+    The clean original chunk is recovered at query time (see _get_display_content).
+    """
+    if not page_documents:
+        return []
+
+    # Build full document text with explicit page boundaries (helps the contextualizer)
+    parts = []
+    for d in page_documents:
+        p = d.metadata.get("page_label") or d.metadata.get("page") or "?"
+        parts.append(f"\n\n--- PAGE {p} ---\n\n{d.text}")
+    full_doc = "".join(parts).strip()
+
+    # Use the same chunk settings as the rest of the system
+    splitter = SentenceSplitter(chunk_size=512, chunk_overlap=64)
+    nodes = splitter.get_nodes_from_documents(
+        [Document(text=full_doc, metadata={"source": original_name})]
+    )
+
+    contextual_docs: list[Document] = []
+    print(f"[contextual] Generating situating context for {len(nodes)} chunks from {original_name}...")
+
+    # Token accounting for learning prompt caching
+    total_input = 0
+    total_output = 0
+    total_cached = 0
+    calls = 0
+
+    for node in nodes:
+        raw_chunk = node.get_content()
+        if not raw_chunk.strip():
+            continue
+
+        # Note: we pass original_name for better fallback messages
+        ctx, usage = _situate_context(full_doc, raw_chunk, doc_name=original_name)
+
+        calls += 1
+        total_input += usage.get("input_tokens", 0)
+        total_output += usage.get("output_tokens", 0)
+        if usage.get("cached_tokens"):
+            total_cached += usage["cached_tokens"]
+
+        # The text we actually embed and put in the BM25 docstore
+        augmented = f"{ctx}\n\n{raw_chunk}" if ctx else raw_chunk
+
+        meta = {
+            "filename": original_name,
+            "context": ctx,
+            # NOTE: We intentionally do NOT put the full original_content here.
+            # LlamaIndex enforces that serialized metadata length <= chunk_size (512 by default).
+            # Storing the whole chunk easily exceeds it (causing the error you saw:
+            # "Metadata length (522) is longer than chunk size (512)").
+            # We recover the clean original at query time by stripping the context prefix.
+            # Try to carry page info (best-effort from surrounding markers or node)
+            "page_label": node.metadata.get("page_label"),
+            "page": node.metadata.get("page"),
+        }
+        # Fallback: try to guess page from the chunk text if the splitter preserved markers
+        if not meta.get("page_label"):
+            # very rough heuristic
+            for line in raw_chunk.splitlines()[:3]:
+                if "PAGE " in line:
+                    try:
+                        meta["page_label"] = line.split("PAGE ")[-1].strip().split()[0]
+                    except Exception:
+                        pass
+                    break
+
+        contextual_docs.append(Document(text=augmented, metadata=meta))
+
+    # Beautiful educational logging (inspired by the Anthropic cookbook)
+    print("\n[contextual] === Prompt Caching / Token Report ===")
+    print(f"  Chunks processed: {calls}")
+    print(f"  Total input tokens sent:  {total_input}")
+    print(f"  Total output tokens:      {total_output}")
+    if total_cached > 0:
+        print(f"  Cached tokens (read from cache): {total_cached}")
+        savings = (total_cached / max(total_input, 1)) * 100
+        print(f"  Apparent cache savings: ~{savings:.1f}% of input tokens were served from cache")
+        print("  (Lower effective cost thanks to prefix caching)")
+    else:
+        print("  No explicit cached_tokens reported by the provider on this run.")
+        print("  → This is typical with current OpenAI setup unless using a model + prefix that triggers caching.")
+        print("  Compare to Anthropic: they would show cache_creation vs cache_read here.")
+    print("[contextual] =======================================\n")
+
+    return contextual_docs
+
+
 def ingest_pdf(file_path: Path, original_name: str) -> dict[str, Any]:
     """Load a PDF, add it to the vector index, return metadata.
 
-    Vector embeddings live in VectorStoreIndex.
-    BM25 reuses the same nodes via index.docstore (built at query time).
+    When RAG_CONTEXTUAL=1:
+      - We run Contextual Retrieval: generate short situating context for each chunk
+        using the full document, then embed + BM25 the *augmented* text.
+      - This improves retrieval for both dense and sparse paths (the core idea
+        from Anthropic's Contextual Embeddings + Contextual BM25).
+
+    The augmented text goes into the indexed nodes (for search).
+    Clean original text is recovered at display time by stripping the context prefix.
     """
     global _index, _documents_meta
 
     configure_models()
-    documents = _load_pdf_documents(file_path, original_name)
+    page_docs = _load_pdf_documents(file_path, original_name)
+
+    if contextual_enabled():
+        docs_to_index = _create_contextual_documents(page_docs, original_name)
+        print(f"[contextual] Using contextualized chunks for indexing (RAG_CONTEXTUAL=1)")
+    else:
+        docs_to_index = page_docs
 
     if _index is None:
-        _index = VectorStoreIndex.from_documents(documents)
+        _index = VectorStoreIndex.from_documents(docs_to_index)
     else:
-        for doc in documents:
+        for doc in docs_to_index:
             _index.insert(doc)
 
     meta = {
         "filename": original_name,
-        "pages": len(documents),
+        "pages": len(page_docs),
         "path": str(file_path),
+        "contextual": contextual_enabled(),
     }
     _documents_meta = [m for m in _documents_meta if m["filename"] != original_name]
     _documents_meta.append(meta)
@@ -321,10 +594,38 @@ def _cross_encoder_rerank(
     }
 
 
+def _get_display_content(node: Any) -> str:
+    """Return clean original chunk text for display / the agent.
+
+    When using Contextual Retrieval:
+      - The indexed node.text = situating_context + "\n\n" + original_chunk
+      - We store only the short "context" in metadata (to keep metadata size << chunk_size)
+      - Here we strip the prefix so the LLM and UI see only the real content.
+
+    This avoids the LlamaIndex error:
+      "Metadata length (522) is longer than chunk size (512)"
+    """
+    if node is None:
+        return ""
+    text = node.get_content() if hasattr(node, "get_content") else str(node)
+    meta = getattr(node, "metadata", {}) or {}
+    ctx = meta.get("context")
+    if ctx and isinstance(ctx, str) and text.startswith(ctx):
+        # strip context + any leading whitespace/newlines
+        remainder = text[len(ctx):]
+        return remainder.lstrip("\n\r\t ")
+    return text
+
+
 def _hit_summary(node_with_score: NodeWithScore, rank: int) -> dict[str, Any]:
-    """Compact one-line hit for traces (page, score, short preview)."""
+    """Compact one-line hit for traces (page, score, short preview).
+
+    When the index was built with contextual retrieval, we show preview of
+    the *original* content (the context prefix is only for better retrieval).
+    """
     node = node_with_score.node
-    text = _clean_text(node.get_content())
+    display_text = _get_display_content(node)
+    text = _clean_text(display_text)
     page = node.metadata.get("page_label") or node.metadata.get("page") or "?"
     score = node_with_score.score
     return {
@@ -334,6 +635,7 @@ def _hit_summary(node_with_score: NodeWithScore, rank: int) -> dict[str, Any]:
         "node_id": node.node_id[:12],
         "chars": len(text),
         "preview": (text[:120] + "…") if len(text) > 120 else text,
+        "has_context": bool(node.metadata.get("context")),
     }
 
 
@@ -529,7 +831,14 @@ def retrieve_trace(
         page = node.metadata.get("page_label") or node.metadata.get("page") or "?"
         methods = node.metadata.get("retrieval_methods", "hybrid")
         score = f"{node_ws.score:.4f}" if node_ws.score is not None else "n/a"
-        raw = _clean_text(node.get_content())
+
+        # IMPORTANT for Contextual Retrieval:
+        # The node text may contain the synthetic context prefix.
+        # We send the *original* clean content to the agent/LLM.
+        # The context only helped the retriever (vector + BM25) find it.
+        display_source = _get_display_content(node)
+        raw = _clean_text(display_source)
+
         if not raw:
             packaged.append(
                 {
@@ -558,11 +867,16 @@ def retrieve_trace(
             for n in needles
         } if needles else {}
 
+        is_contextual = bool(node.metadata.get("context"))
+        match_line = f"- Match: {methods} (score {score})"
+        if is_contextual:
+            match_line += " [contextual]"
+
         card = (
             f"### Passage {i}\n"
             f"- Document: {source}\n"
             f"- Page: {page}\n"
-            f"- Match: {methods} (score {score})\n"
+            f"{match_line}\n"
             f"\n{content}"
         )
         parts.append(card)
@@ -586,6 +900,8 @@ def retrieve_trace(
                 "needle_in_raw": needle_in_raw,
                 "needle_in_packaged": needle_hits,
                 "packaging_loss": packaging_loss,
+                "contextual": is_contextual,
+                "retrieval_context": node.metadata.get("context") if is_contextual else None,
             }
         )
 
@@ -661,10 +977,15 @@ def _emit_trace_ascii(trace: dict[str, Any]) -> None:
         rerank.get("enabled") and not rerank.get("reason")
     )
 
+    # Detect if this retrieval is benefiting from Contextual Retrieval
+    pkg_passages = package.get("passages") or []
+    any_contextual = any(p.get("contextual") for p in pkg_passages)
+    ctx_label = " + contextual" if any_contextual else ""
+
     lines = [
         "",
         "═" * 64,
-        " RAG_TRACE — hybrid + rerank",
+        f" RAG_TRACE — hybrid + rerank{ctx_label}",
         "═" * 64,
         f"  query: “{q}”",
         "",
@@ -675,6 +996,8 @@ def _emit_trace_ascii(trace: dict[str, Any]) -> None:
         f"  fused={rrf.get('n_fused')}  rerank_out={rerank.get('n_out', n_pass)}  "
         f"packaged={n_pass}  truncated={n_trunc}  cap={cap} chars",
     ]
+    if any_contextual:
+        lines.append("  [contextual retrieval] context prefix used only for ranking (clean original sent to LLM)")
     if rerank:
         if rerank.get("applied"):
             lines.append(
@@ -731,6 +1054,10 @@ def retrieve(query: str, top_k: int = DEFAULT_TOP_K) -> str:
       RERANK_MODEL=…     default cross-encoder/ms-marco-MiniLM-L-6-v2
       RERANK_CANDIDATES= how many RRF hits feed CE (default 20)
       RAG_TRACE=1        compact ASCII log on each retrieve (uvicorn)
+
+      RAG_CONTEXTUAL=1   enable Contextual Retrieval at ingest time
+                         (short situating context prepended before embed + BM25)
+                         See _create_contextual_documents + _situate_context.
 
     Full dump: ``python eval/trace_rag.py --ids q06``
     """

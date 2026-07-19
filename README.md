@@ -120,6 +120,7 @@ Agent/teaching preferences (ASCII-first explanations): **[AGENTS.md](AGENTS.md)*
 ## Learn next
 
 - ~~Optional cross-encoder **rerank** after hybrid~~ — **shipped** (default on; `RAG_RERANK=0` to skip).
+- Contextual Retrieval (`RAG_CONTEXTUAL=1` at ingest) — **shipped for learning** (see backend/rag.py).
 - Persist the vector index (disk or Chroma / Qdrant) instead of memory-only.
 - Stricter grade (answerable-from-context only, or min similarity).
 - Token-level LLM streaming on top of step SSE.

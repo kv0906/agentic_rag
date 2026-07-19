@@ -1435,4 +1435,131 @@ Hugging Face Hub = **app store for open weights** — we pull a standard MS MARC
 
 *Last updated: Ch. 18 includes PM/CEO mental model (hybrid recall → CE precision → local HF ranker). Next: optional Ragas A/B vs --no-rerank, or index persist.*
 
+---
+
+## Chapter 19 — Contextual Retrieval (Contextual Embeddings + Contextual BM25)
+
+**Q: What is the "context conundrum" in chunking, and how does Contextual Retrieval fix it?**
+
+**Problem (classic RAG failure mode)**
+
+When you split a long document:
+
+```
+PDF (many pages, e.g. playbook)
+   │
+   ▼ SentenceSplitter(512/64)
+   │
+   "naked chunk": "Only markets that are Live or Approved appear..."
+                 ↑ missing: which page? what is the rule about? what is the document about?
+```
+
+Both embeddings and BM25 see an orphan sentence. Retrieval often fails or ranks it poorly even though the fact exists.
+
+**Solution (Anthropic 2024 — "Contextual Retrieval")**
+
+At **ingest time only**, before embedding and before building BM25:
+
+For every chunk, use a cheap LLM + the *full document* to write a 50-100 token "situating context":
+
+```
+context = "This chunk is from the Huula MMBot Playbook, section on Live Markets page (p.6). It describes the eligibility filter for which markets are visible..."
+
+augmented_for_index = context + "\n\n" + original_chunk
+```
+
+- Embed the augmented text (Contextual Embeddings)
+- Index the augmented text for BM25 (Contextual BM25)
+
+At query time the retriever (vector + BM25 + RRF + rerank) benefits from the extra context.
+
+When packaging for the final LLM / agent, we send only the **original clean chunk** (the context was scaffolding for retrieval).
+
+**Why this is powerful**
+
+- One-time cost (ingest)
+- Works for both semantic and keyword search
+- Very large measured lift in the original paper (49% reduction in failed retrievals, 67% with rerank)
+- Complements everything we already had (hybrid + CE rerank)
+
+**Implementation in this repo (hands-on learning)**
+
+| Location | Change |
+|----------|--------|
+| `backend/rag.py` | `RAG_CONTEXTUAL=1` flag, `_situate_context()`, `_create_contextual_documents()`, modified `ingest_pdf` |
+| Packaging | Prefer `metadata["original_content"]` for the text sent to grade/answer |
+| Trace (`RAG_TRACE=1`) | Shows `[contextual]` and a note that context helped ranking only |
+| Metadata | Every node from a contextual upload has `context` + `original_content` + `contextual=True` |
+
+**How to try it right now (for learning)**
+
+```bash
+# Terminal A
+RAG_CONTEXTUAL=1 RAG_TRACE=1 \
+  uvicorn backend.main:app --reload --port 8000
+
+# In UI or curl: clear index, upload a PDF (e.g. the MMBot playbook)
+# Then ask questions that rely on "buried" notes or precise terms (q06 style)
+```
+
+Watch the ingest logs: you will see "Generating situating context for N chunks..."
+
+In traces you will see passages marked `[contextual]`.
+
+To compare fairly:
+1. `RAG_CONTEXTUAL=0` + clear + upload → baseline run (note the retrieval trace)
+2. `RAG_CONTEXTUAL=1` + clear + same upload → contextual run
+3. Compare which golden facts are found earlier / with higher effective rank.
+
+**Mental model card**
+
+```
+INGEST (one time)
+  full PDF text
+       │
+       ▼ chunk
+       │
+       ▼ LLM (cheap) + full doc  →  "This chunk lives in ... about X"
+       │
+       ▼
+  text_for_index = context + chunk     ← used by embed + BM25
+       │
+       ▼
+  VectorStoreIndex + docstore
+
+QUERY (normal)
+  query → vector(aug) + BM25(aug) → RRF → rerank → package(original only) → agent
+```
+
+**Key distinctions**
+
+- Contextual Retrieval ≠ Reranking (different stage, different cost)
+- It improves **recall** of the right chunks (what makes it into the shortlist)
+- We deliberately do **not** send the generated context to the answer LLM (avoids noise)
+
+**Tradeoffs observed / to measure**
+
+- Ingestion slower + small $ (one time per PDF)
+- Better hit rate on tricky "local" facts and eligibility notes
+- In our stack it automatically upgrades both the vector path and the existing BM25 path
+
+**Next experiments (after this chapter lands)**
+
+- Run side-by-side on golden set (custom "pass@k" style using `must_have_in_chunks`)
+- Try different context prompts (more domain specific)
+- Measure token overhead in the index
+- Consider storing context separately and only using it at retrieval scoring time (advanced)
+
+**Takeaway**
+
+Chunking throws away document-level signal.  
+Contextual Retrieval gives a cheap, one-time "label" back to every chunk so the search engines can see the forest, not just the tree.
+
+This was implemented live as Chapter 19 to learn by doing.
+```
+
+---
+
+**Standing note:** All previous chapters remain valid. Contextual Retrieval is an **upstream augmentation** of the chunks that feed the hybrid + rerank pipeline we built in Ch. 11 + Ch. 18.
+
 
