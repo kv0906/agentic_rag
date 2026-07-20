@@ -124,7 +124,7 @@ Imports: `@astryxdesign/core/reset.css`, `astryx.css`, `@astryxdesign/theme-neut
 
 Questions asked while building this app (what LlamaIndex vs LangGraph do, where vectors live, how grade/LLM-as-judge works, etc.) are documented as a study path:
 
-→ **[docs/LEARNING_JOURNEY.md](docs/LEARNING_JOURNEY.md)**
+→ **[docs/learning/README.md](docs/learning/README.md)** (topic files; old path `docs/LEARNING_JOURNEY.md` redirects)
 
 Agent/teaching preferences (ASCII-first explanations): **[AGENTS.md](AGENTS.md)**
 

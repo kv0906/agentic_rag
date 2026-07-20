@@ -108,7 +108,7 @@ python eval/trace_rag.py --ids q06 --json /tmp/trace-q06.json
 | `package` | Per-passage `raw_chars` vs cap; **LOST** = needle in node but cut by cap |
 | `return` | Final tool string length + needles present? |
 
-Related aha: `docs/LEARNING_JOURNEY.md` Ch. 17 (packaging vs retrieval).
+Related aha: `docs/learning/05-ship-eval-polish.md` Ch. 17 (packaging vs retrieval).
 
 ## Automated eval with Ragas
 

@@ -6,7 +6,9 @@ Project-specific guidance for AI coding agents.
 
 Prefer **ASCII diagrams + plain language** for architecture and concepts (RAG flow, agent loop, chunk overlap, memory vs DB, LangGraph vs LlamaIndex). Lead with the picture, then a short caption. Full standing preference: `AGENTS.md`.
 
-Learning log: `docs/LEARNING_JOURNEY.md` — update when a new mental model lands.
+Hard concepts: life analogy first, then diagram, then jargon; Vietnamese OK when asked. Locked models in `docs/learning/` (e.g. **07-chunking.md** Ch. 20–21, **08-agent-evals.md** Ch. 22–23: six eval categories + philosophy intention→trust/reliability).
+
+Learning hub: `docs/learning/README.md` — add new ahas to the matching topic file + hub index.
 
 <!-- ASTRYX:START -->
 Astryx v0.1.4 · 149 components

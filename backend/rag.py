@@ -63,7 +63,7 @@ DEFAULT_TOP_K = 8
 DEFAULT_RERANK_CANDIDATES = 20
 
 # Soft cap when packaging each passage into the tool string (characters, not tokens).
-# See LEARNING_JOURNEY Ch. 17 — was 800 and cut the Live/Approved NOTE on page 6.
+# See docs/learning/05-ship-eval-polish.md Ch. 17 — was 800 and cut the Live/Approved NOTE on page 6.
 MAX_PASSAGE_CHARS = 2000
 
 # Default MS MARCO cross-encoder — standard for passage reranking (not STS).

@@ -13,6 +13,18 @@ When explaining architecture, RAG, LangGraph, LlamaIndex, chunking, loops, trade
 3. Use a **small table** only when comparing options (memory vs DB, who owns what).
 4. Point to **concrete files** (`backend/agent.py`, `backend/rag.py`) after the picture.
 5. Prefer “CEO level” / human-readable first when asked how something works; add node/edge detail only if requested.
+6. **Hard concepts:** life analogy first (e.g. book + box size for chunking), then the diagram, then jargon. Vietnamese is fine when Van asks (`giải thích tiếng Việt`).
+7. **Locked mental models** live under `docs/learning/` (hub: `docs/learning/README.md`). Especially [07-chunking.md](docs/learning/07-chunking.md) Ch. 20–21 (chunking) and [08-agent-evals.md](docs/learning/08-agent-evals.md) Ch. 22–23 (evals). Reuse those explainers; don’t reinvent a denser version. When picking a splitter, open Ch. 21; when designing agent evals, open Ch. 22–23 first.
+
+### Core eval philosophy (locked — Ch. 23)
+
+**Human understands intention, goal, and direction → harness the system toward TRUST and RELIABILITY.**
+
+- Humans define what “good” means; evals **encode** that judgment — they do not replace it.
+- Harness = goldens, asserts, traces, CI gates, canaries, review loops.
+- Measure with six categories (Ch. 22): outcome, process, grounding, safety, efficiency, UX.
+- Full write-up: `docs/learning/08-agent-evals.md`.
+
 
 ### ASCII style that works well here
 
@@ -33,9 +45,11 @@ Avoid dense paragraphs that restate the same diagram twice. **Less is more** —
 
 ### Learning docs in this repo
 
-- Study path / Q&A journey: `docs/LEARNING_JOURNEY.md`
+- Study path (hub): `docs/learning/README.md`
+- Topics: `docs/learning/01-foundation.md` … `08-agent-evals.md` (by theme; chapter numbers preserved)
+- Legacy redirect: `docs/LEARNING_JOURNEY.md` → hub
 - Runbook: `README.md`
-- When a session produces a new “aha” mental model, **update `docs/LEARNING_JOURNEY.md`** (and link from README if it’s a new chapter).
+- When a session produces a new “aha” mental model, **add a chapter to the right topic file** under `docs/learning/`, link it from the hub README, and append the question index.
 
 ## Stack reminder (one-liner)
 
