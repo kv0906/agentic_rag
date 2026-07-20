@@ -99,15 +99,38 @@ python orchestrator.py "What is a binary market?"
 
 ```
 backend/
-  main.py              # FastAPI routes
-  rag.py               # LlamaIndex PDF ingestion + retrieve()
-  agent.py             # LangGraph graph (tutorial-shaped)
+  main.py              # FastAPI routes (+ orchestrate stream)
+  rag.py               # PDF ingest, hybrid retrieve, CE rerank, optional contextual
+  agent.py             # LangGraph agentic RAG graph
+  orchestrator.py      # Multi-agent: ask_docs → specialist RAG
+eval/
+  golden.jsonl         # Task / must-have checklist
+  run_ragas.py         # Offline eval harness
+  trace_rag.py         # Step-by-step retrieve debug
+  README.md            # How to run evals
+docs/
+  learning/            # Study path (topic files) — start at README.md
+  LEARNING_JOURNEY.md  # Redirect stub → docs/learning/
 src/
-  app/
-    ai-chat/page.tsx   # Astryx ai-chat template (wired to RAG)
-    layout.tsx         # Theme + CSS
+  app/ai-chat/         # Astryx chat UI (wired to RAG + orchestrator)
   lib/api.ts           # Client → API
+  lib/citations.ts     # Page / source citation helpers
+AGENTS.md              # How agents should teach & where locked models live
 ```
+
+## Eval (offline)
+
+```bash
+source .venv/bin/activate
+# Full-ish run (see eval/README.md for flags)
+python eval/run_ragas.py
+# Debug one case
+python eval/trace_rag.py --ids q06
+```
+
+Details: **[eval/README.md](eval/README.md)**.
+
+Agent quality is multi-dimensional (outcome · process · grounding · safety · efficiency · UX) — philosophy + categories in **[docs/learning/08-agent-evals.md](docs/learning/08-agent-evals.md)**.
 
 ## Astryx
 
@@ -120,19 +143,35 @@ npx astryx component Chat                  # component API
 
 Imports: `@astryxdesign/core/reset.css`, `astryx.css`, `@astryxdesign/theme-neutral/theme.css` + `<Theme theme={neutralTheme}>`.
 
-## Learning journey
+## Learning hub
 
-Questions asked while building this app (what LlamaIndex vs LangGraph do, where vectors live, how grade/LLM-as-judge works, etc.) are documented as a study path:
+Study path from building this app (LlamaIndex vs LangGraph, hybrid, rerank, chunking, evals, …), split by topic:
 
-→ **[docs/learning/README.md](docs/learning/README.md)** (topic files; old path `docs/LEARNING_JOURNEY.md` redirects)
+→ **[docs/learning/README.md](docs/learning/README.md)**  
+→ Old monolith path: [`docs/LEARNING_JOURNEY.md`](docs/LEARNING_JOURNEY.md) redirects here.
 
-Agent/teaching preferences (ASCII-first explanations): **[AGENTS.md](AGENTS.md)**
+| Topic | File |
+|-------|------|
+| Foundation (Ch. 1–5) | [docs/learning/01-foundation.md](docs/learning/01-foundation.md) |
+| Agent loop (Ch. 6–8) | [docs/learning/02-agent-loop.md](docs/learning/02-agent-loop.md) |
+| Retrieval basics (Ch. 9–10) | [docs/learning/03-retrieval-basics.md](docs/learning/03-retrieval-basics.md) |
+| Hybrid search (Ch. 11–12) | [docs/learning/04-hybrid-search.md](docs/learning/04-hybrid-search.md) |
+| Ship / eval / polish (Ch. 13–17) | [docs/learning/05-ship-eval-polish.md](docs/learning/05-ship-eval-polish.md) |
+| Rerank (Ch. 18) | [docs/learning/06-rerank.md](docs/learning/06-rerank.md) |
+| Chunking (Ch. 19–21) | [docs/learning/07-chunking.md](docs/learning/07-chunking.md) |
+| Agent evals (Ch. 22–23) | [docs/learning/08-agent-evals.md](docs/learning/08-agent-evals.md) |
+
+**Locked jump-ins:** recursive chunking (Ch. 20), doc↔chunking tables (Ch. 21), eval philosophy intention→trust (Ch. 23).
+
+Teaching style (ASCII-first, etc.): **[AGENTS.md](AGENTS.md)**
 
 ## Learn next
 
-- ~~Optional cross-encoder **rerank** after hybrid~~ — **shipped** (default on; `RAG_RERANK=0` to skip).
-- Contextual Retrieval (`RAG_CONTEXTUAL=1` at ingest) — **shipped for learning** (see backend/rag.py).
+- ~~Cross-encoder **rerank** after hybrid~~ — **shipped** (`RAG_RERANK=0` to skip).
+- ~~Contextual Retrieval at ingest~~ — **shipped for learning** (`RAG_CONTEXTUAL=1`; see `backend/rag.py`).
+- ~~Learning log split by topic~~ — **shipped** (`docs/learning/`).
 - Persist the vector index (disk or Chroma / Qdrant) instead of memory-only.
 - Stricter grade (answerable-from-context only, or min similarity).
 - Token-level LLM streaming on top of step SSE.
 - Swap OpenAI for a local model (Ollama) on both LLM and embeddings.
+- Optional: agentic chunking only if eval shows boundary misses (see Ch. 21).
