@@ -142,7 +142,7 @@ def _format_specialist_result(body: dict[str, Any]) -> str:
 
 @tool
 def ask_docs(query: str) -> str:
-    """Ask the document specialist about uploaded PDFs.
+    """Ask the document specialist about uploaded documents.
 
     Use this for any question that might be answered from the user's documents
     (definitions, workflows, screens, numbers, strategies). Pass a clear,
@@ -175,7 +175,7 @@ def ask_docs(query: str) -> str:
 # ---------------------------------------------------------------------------
 
 SYSTEM = (
-    "You are a lightweight orchestrator. You do NOT read PDFs yourself.\n"
+    "You are a lightweight orchestrator. You do NOT read documents yourself.\n"
     "For any document / playbook / product question, call ask_docs with a clear query.\n"
     "For greetings or meta questions about your role, reply briefly without tools.\n"
     "After ask_docs returns, give the user a clean final answer grounded in that result. "
@@ -380,7 +380,7 @@ def _print_run(question: str) -> int:
             )
             if not health.get("has_documents"):
                 print(
-                    "Warning: no documents indexed. Upload a PDF via the UI "
+                    "Warning: no documents indexed. Upload a document via the UI "
                     "or POST /api/upload first."
                 )
         except Exception as exc:  # noqa: BLE001

@@ -71,7 +71,7 @@ import {
   clearDocuments,
   fetchDocuments,
   fetchHealth,
-  uploadPdf,
+  uploadDocument,
   type AgentStep,
   type ChatMode,
   type DocumentMeta,
@@ -154,7 +154,7 @@ This chat is backed by a **LangGraph** agent and a **LlamaIndex** retriever.
 ### Mode: Direct RAG
 
 1. **generate_query_or_respond** — model decides whether to call \`retrieve_documents\` or answer directly
-2. **retrieve** — LlamaIndex hybrid search over your PDF chunks
+2. **retrieve** — LlamaIndex hybrid search over your document chunks
 3. **grade_documents** — structured yes/no relevance check
 4. **rewrite_question** — improve the query if chunks look weak
 5. **generate_answer** — final grounded answer
@@ -171,7 +171,7 @@ The orchestrator does **not** retrieve itself. It calls \`ask_docs\` (same contr
 
 ### Try it
 
-- Upload a short PDF with the paperclip
+- Upload a short PDF or Markdown file with the paperclip
 - Switch **Direct** vs **Orchestrator** above the composer
 - Ask something that needs the document
 - Watch tool calls: \`retrieve_documents\` (direct) or \`ask_docs\` (orchestrator)
@@ -373,8 +373,8 @@ function ArtifactBody({
           {keySet === false
             ? 'Set OPENAI_API_KEY in .env and restart the backend.'
             : docs.length
-              ? `${docs.length} PDF${docs.length === 1 ? '' : 's'} indexed in LlamaIndex (in-memory).`
-              : 'No PDFs yet — attach one from the composer.'}
+              ? `${docs.length} document${docs.length === 1 ? '' : 's'} indexed in LlamaIndex (in-memory).`
+              : 'No documents yet — attach one from the composer.'}
         </Text>
         {docs.length > 0 ? (
           <VStack gap={2}>
@@ -387,7 +387,9 @@ function ArtifactBody({
                       {d.filename}
                     </Text>
                     <Text type="supporting" color="secondary">
-                      {d.pages} page{d.pages === 1 ? '' : 's'}
+                      {d.file_type === 'pdf'
+                        ? `${d.pages ?? 0} page${d.pages === 1 ? '' : 's'}`
+                        : `${d.sections ?? 0} section${d.sections === 1 ? '' : 's'}`}
                     </Text>
                   </VStack>
                 </HStack>
@@ -521,7 +523,7 @@ export default function AIChatConversationTemplate() {
     setIsUploading(true);
     setError(null);
     try {
-      const documents = await uploadPdf(file);
+      const documents = await uploadDocument(file);
       setDocs(documents);
       setMessages(prev => [
         ...prev,
@@ -739,7 +741,7 @@ export default function AIChatConversationTemplate() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,text/markdown,.pdf,.md,.markdown"
         className="sr-only"
         onChange={onFileChange}
       />
@@ -776,17 +778,17 @@ export default function AIChatConversationTemplate() {
                       <EmptyState
                         title={
                           docs.length
-                            ? 'Ask about your PDF'
-                            : 'Upload a PDF to start'
+                            ? 'Ask about your documents'
+                            : 'Upload a document to start'
                         }
                         description={
                           chatMode === 'orchestrator'
                             ? 'Orchestrator mode: a LangGraph manager calls ask_docs → your agentic RAG specialist.'
-                            : 'Direct mode: LangGraph decides when to retrieve; LlamaIndex indexes your PDF.'
+                            : 'Direct mode: LangGraph decides when to retrieve; LlamaIndex indexes your document.'
                         }
                         actions={
                           <Button
-                            label="Upload PDF"
+                            label="Upload document"
                             variant="primary"
                             size="sm"
                             icon={<Icon icon={PaperClipIcon} size="sm" />}
@@ -806,8 +808,8 @@ export default function AIChatConversationTemplate() {
                         docs.length
                           ? chatMode === 'orchestrator'
                             ? 'Orchestrator will call ask_docs…'
-                            : 'Ask anything about your PDF…'
-                          : 'Upload a PDF, or say hello'
+                            : 'Ask anything about your documents…'
+                          : 'Upload a PDF or Markdown file, or say hello'
                       }
                       isDisabled={isChatting || isUploading}
                       isStopShown={isChatting}
@@ -843,7 +845,7 @@ export default function AIChatConversationTemplate() {
                             />
                           </SegmentedControl>
                           <Button
-                            label="Attach PDF"
+                            label="Attach document"
                             variant="ghost"
                             size="sm"
                             icon={<Icon icon={PaperClipIcon} size="sm" />}

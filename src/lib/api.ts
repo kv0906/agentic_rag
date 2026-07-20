@@ -1,6 +1,9 @@
 export type DocumentMeta = {
   filename: string;
-  pages: number;
+  file_type: "pdf" | "markdown";
+  pages?: number | null;
+  sections?: number | null;
+  chunks?: number;
   path?: string;
 };
 
@@ -60,7 +63,7 @@ export async function fetchDocuments(): Promise<DocumentMeta[]> {
   return data.documents ?? [];
 }
 
-export async function uploadPdf(file: File): Promise<DocumentMeta[]> {
+export async function uploadDocument(file: File): Promise<DocumentMeta[]> {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch("/api/upload", {

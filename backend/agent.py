@@ -53,7 +53,7 @@ def _grader_model():
 
 @tool
 def retrieve_documents(query: str) -> str:
-    """Search uploaded PDF documents for passages relevant to the query.
+    """Search uploaded documents for passages relevant to the query.
 
     Call this for ANY question that might be answered from the uploaded docs,
     including glossary/definitions ("what is a binary market?", "what is the
@@ -85,7 +85,7 @@ def generate_query_or_respond(state: MessagesState) -> dict[str, Any]:
         "You are a practical coach for document Q&A — clear, human, and a bit proactive.\n"
         "\n"
         "When documents are available, you MUST call retrieve_documents for almost every "
-        "user question that could be grounded in the PDF, including:\n"
+        "user question that could be grounded in a document, including:\n"
         "- definitions / glossary / 'what is X?' / key terms (binary market, spread, MM User, …)\n"
         "- screens, navigation, filters, statuses, workflows, strategies, numbers\n"
         "Do NOT answer term questions from general knowledge when docs are loaded — "
@@ -93,11 +93,11 @@ def generate_query_or_respond(state: MessagesState) -> dict[str, Any]:
         "\n"
         "Respond directly (no tool) ONLY for:\n"
         "- pure greetings / small talk with no content question\n"
-        "- clearly off-topic chat (e.g. weather) with no PDF angle\n"
+        "- clearly off-topic chat (e.g. weather) with no document angle\n"
         "- meta help about how this chat works\n"
         "\n"
         f"Documents available: "
-        f"{'yes — prefer retrieve_documents' if docs_yes else 'no — tell the user to upload a PDF first'}."
+        f"{'yes — prefer retrieve_documents' if docs_yes else 'no — tell the user to upload a document first'}."
     )
     messages = [{"role": "system", "content": system}, *state["messages"]]
     response = _response_model().bind_tools([retriever_tool]).invoke(messages)
@@ -140,7 +140,7 @@ def grade_documents(
     question = _original_question(state)
     context = state["messages"][-1].content
 
-    # Cap rewrite loops so a weak PDF cannot thrash the graph forever.
+    # Cap rewrite loops so a weak document cannot thrash the graph forever.
     if _rewrite_count(state) > MAX_REWRITES:
         return "generate_answer"
 
@@ -175,7 +175,7 @@ def rewrite_question(state: MessagesState) -> dict[str, Any]:
 
 
 GENERATE_PROMPT = (
-    "You are a thoughtful document coach for the user's uploaded playbook/PDF — "
+    "You are a thoughtful coach for the user's uploaded documents — "
     "curious, clear, and collaborative, like a sharp teammate who actually read the doc.\n"
     "\n"
     "Personality\n"
@@ -216,11 +216,12 @@ GENERATE_PROMPT = (
     "from this document, or a gentle 'want to go into X next?' — not a canned menu.\n"
     "\n"
     "Citation rules (important for the UI):\n"
-    "- Each passage header has Document and Page fields.\n"
-    "- When you use a fact from a passage, cite it as (p. N) or "
-    "(Document name, p. N) using those fields.\n"
+    "- Each passage header has Document plus either Page or Section.\n"
+    "- Cite PDF facts as (p. N) or (Document name, p. N).\n"
+    "- Cite Markdown facts as (§ Section name) or "
+    "(Document name, § Section name).\n"
     "- Never write 'Chunk 1', 'Chunk 2', '[Chunk …]', or passage numbers alone.\n"
-    "- Prefer page citations over listing every passage; weave cites into the prose.\n"
+    "- Prefer page/section citations over passage numbers; weave cites into the prose.\n"
     "\n"
     "Question: {question}\n"
     "<context>\n{context}\n</context>"
@@ -291,7 +292,7 @@ graph = build_graph()
 # Human-readable phase labels for live UI streaming
 NODE_PHASES: dict[str, str] = {
     "generate_query_or_respond": "Reasoning — decide whether to retrieve…",
-    "retrieve": "Retrieving relevant PDF chunks…",
+    "retrieve": "Retrieving relevant document chunks…",
     "rewrite_question": "Rewriting the question for better retrieval…",
     "generate_answer": "Writing the answer…",
 }

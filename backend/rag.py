@@ -1,8 +1,8 @@
-"""LlamaIndex PDF ingestion + hybrid (vector + BM25) + cross-encoder rerank.
+"""LlamaIndex document ingestion + hybrid (vector + BM25) + cross-encoder rerank.
 
 This is the "retrieval" half of agentic RAG:
 
-  Ingest:  PDF → load → chunk → [optional: contextualize] → embed → VectorStoreIndex (+ docstore for BM25)
+  Ingest:  file → load → type-aware chunk → [optional: contextualize] → embed → VectorStoreIndex
   Query:   vector + BM25 → RRF fuse (wide) → cross-encoder rerank → top-k
 
 Contextual Retrieval (RAG_CONTEXTUAL=1):
@@ -24,7 +24,7 @@ from typing import Any
 
 import Stemmer
 from llama_index.core import Document, Settings, VectorStoreIndex
-from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.core.schema import NodeWithScore
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
@@ -35,9 +35,13 @@ from pypdf import PdfReader
 from functools import lru_cache
 from openai import OpenAI as RawOpenAIClient  # raw client for learning prompt caching behavior
 
-# Project-local storage for uploaded PDFs
+# Project-local storage for uploaded documents
 DATA_DIR = Path(__file__).resolve().parent / "data" / "uploads"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+SUPPORTED_DOCUMENT_EXTENSIONS = frozenset({".pdf", ".md", ".markdown"})
+CHUNK_SIZE = 512
+CHUNK_OVERLAP = 64
 
 # Module-level index (rebuilt on each successful upload)
 _index: VectorStoreIndex | None = None
@@ -265,7 +269,10 @@ def configure_models(
     )
     Settings.llm = OpenAI(model=chat, temperature=0)
     Settings.embed_model = OpenAIEmbedding(model=emb)
-    Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=64)
+    Settings.node_parser = SentenceSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+    )
 
 
 def list_documents() -> list[dict[str, Any]]:
@@ -336,34 +343,100 @@ def _load_pdf_documents(file_path: Path, original_name: str) -> list[Document]:
     return documents
 
 
+def _load_markdown_documents(file_path: Path, original_name: str) -> list[Document]:
+    """Load UTF-8 Markdown without destroying its heading structure."""
+    try:
+        text = file_path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Markdown files must be UTF-8 encoded.") from exc
+
+    if not text.strip():
+        raise ValueError("No text found in this Markdown file.")
+
+    return [
+        Document(
+            text=text,
+            metadata={
+                "filename": original_name,
+                "file_name": original_name,
+                "file_type": "markdown",
+            },
+        )
+    ]
+
+
+def _load_source_documents(file_path: Path, original_name: str) -> list[Document]:
+    """Load a supported file into source documents before chunking."""
+    extension = Path(original_name).suffix.lower()
+    if extension == ".pdf":
+        return _load_pdf_documents(file_path, original_name)
+    if extension in {".md", ".markdown"}:
+        return _load_markdown_documents(file_path, original_name)
+    raise ValueError(f"Unsupported document type: {extension or 'no extension'}")
+
+
+def _markdown_section(node: Any) -> str:
+    """Build a human-readable heading path for a Markdown section node."""
+    text = node.get_content()
+    heading = next(
+        (
+            line.lstrip("#").strip()
+            for line in text.splitlines()
+            if line.startswith("#") and line.lstrip("#").startswith(" ")
+        ),
+        "",
+    )
+    parent = str(node.metadata.get("header_path", "")).strip("/")
+    return " / ".join(part for part in (parent, heading) if part) or "Document"
+
+
+def _parse_documents(
+    documents: list[Document],
+    original_name: str,
+) -> list[Any]:
+    """Route each file type to a structure-aware parser and enforce a size cap."""
+    extension = Path(original_name).suffix.lower()
+    size_splitter = SentenceSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+    )
+
+    if extension == ".pdf":
+        return size_splitter.get_nodes_from_documents(documents)
+
+    if extension in {".md", ".markdown"}:
+        section_nodes = MarkdownNodeParser().get_nodes_from_documents(documents)
+        for node in section_nodes:
+            node.metadata["section"] = _markdown_section(node)
+        return size_splitter.get_nodes_from_documents(section_nodes)
+
+    raise ValueError(f"Unsupported document type: {extension or 'no extension'}")
+
+
 def _create_contextual_documents(
-    page_documents: list[Document], original_name: str
+    source_documents: list[Document],
+    nodes: list[Any],
+    original_name: str,
 ) -> list[Document]:
     """Contextual Retrieval step.
 
-    1. Build a "full document" view (with page markers so the LLM understands structure).
-    2. Re-chunk the full text (same splitter settings).
+    1. Build a full-document view (with page markers when available).
+    2. Use the chunks already produced by the file-type parser.
     3. For each chunk, ask the LLM for a short situating context.
-    4. Return Documents whose .text = context + "\n\n" + original_chunk
+    4. Return Documents whose .text = context + "\n\n" + original chunk
        (this text is what gets embedded + indexed for BM25 — the key for better retrieval).
     We only put small fields + the short "context" into metadata.
     The clean original chunk is recovered at query time (see _get_display_content).
     """
-    if not page_documents:
+    if not source_documents:
         return []
 
-    # Build full document text with explicit page boundaries (helps the contextualizer)
     parts = []
-    for d in page_documents:
-        p = d.metadata.get("page_label") or d.metadata.get("page") or "?"
-        parts.append(f"\n\n--- PAGE {p} ---\n\n{d.text}")
+    for document in source_documents:
+        page = document.metadata.get("page_label") or document.metadata.get("page")
+        marker = f"\n\n--- PAGE {page} ---\n\n" if page else "\n\n"
+        parts.append(f"{marker}{document.text}")
     full_doc = "".join(parts).strip()
-
-    # Use the same chunk settings as the rest of the system
-    splitter = SentenceSplitter(chunk_size=512, chunk_overlap=64)
-    nodes = splitter.get_nodes_from_documents(
-        [Document(text=full_doc, metadata={"source": original_name})]
-    )
 
     contextual_docs: list[Document] = []
     print(f"[contextual] Generating situating context for {len(nodes)} chunks from {original_name}...")
@@ -392,6 +465,7 @@ def _create_contextual_documents(
         augmented = f"{ctx}\n\n{raw_chunk}" if ctx else raw_chunk
 
         meta = {
+            **node.metadata,
             "filename": original_name,
             "context": ctx,
             # NOTE: We intentionally do NOT put the full original_content here.
@@ -435,8 +509,8 @@ def _create_contextual_documents(
     return contextual_docs
 
 
-def ingest_pdf(file_path: Path, original_name: str) -> dict[str, Any]:
-    """Load a PDF, add it to the vector index, return metadata.
+def ingest_document(file_path: Path, original_name: str) -> dict[str, Any]:
+    """Load a supported document, add it to the vector index, return metadata.
 
     When RAG_CONTEXTUAL=1:
       - We run Contextual Retrieval: generate short situating context for each chunk
@@ -450,29 +524,47 @@ def ingest_pdf(file_path: Path, original_name: str) -> dict[str, Any]:
     global _index, _documents_meta
 
     configure_models()
-    page_docs = _load_pdf_documents(file_path, original_name)
+    source_docs = _load_source_documents(file_path, original_name)
+    nodes = _parse_documents(source_docs, original_name)
 
     if contextual_enabled():
-        docs_to_index = _create_contextual_documents(page_docs, original_name)
+        nodes_to_index = _create_contextual_documents(
+            source_docs,
+            nodes,
+            original_name,
+        )
         print(f"[contextual] Using contextualized chunks for indexing (RAG_CONTEXTUAL=1)")
     else:
-        docs_to_index = page_docs
+        nodes_to_index = nodes
 
     if _index is None:
-        _index = VectorStoreIndex.from_documents(docs_to_index)
+        _index = VectorStoreIndex(nodes_to_index)
     else:
-        for doc in docs_to_index:
-            _index.insert(doc)
+        _index.insert_nodes(nodes_to_index)
 
+    extension = Path(original_name).suffix.lower()
+    sections = {
+        node.metadata["section"]
+        for node in nodes
+        if node.metadata.get("section")
+    }
     meta = {
         "filename": original_name,
-        "pages": len(page_docs),
+        "file_type": "pdf" if extension == ".pdf" else "markdown",
+        "pages": len(source_docs) if extension == ".pdf" else None,
+        "sections": len(sections) if sections else None,
+        "chunks": len(nodes),
         "path": str(file_path),
         "contextual": contextual_enabled(),
     }
     _documents_meta = [m for m in _documents_meta if m["filename"] != original_name]
     _documents_meta.append(meta)
     return meta
+
+
+def ingest_pdf(file_path: Path, original_name: str) -> dict[str, Any]:
+    """Backward-compatible PDF entry point used by the eval scripts."""
+    return ingest_document(file_path, original_name)
 
 
 def _reciprocal_rank_fusion(
@@ -617,6 +709,17 @@ def _get_display_content(node: Any) -> str:
     return text
 
 
+def _node_location(node: Any) -> tuple[str, str]:
+    """Return the citation field and value appropriate for this node."""
+    page = node.metadata.get("page_label") or node.metadata.get("page")
+    if page:
+        return "Page", str(page)
+    section = node.metadata.get("section")
+    if section:
+        return "Section", str(section)
+    return "Section", "Document"
+
+
 def _hit_summary(node_with_score: NodeWithScore, rank: int) -> dict[str, Any]:
     """Compact one-line hit for traces (page, score, short preview).
 
@@ -626,11 +729,12 @@ def _hit_summary(node_with_score: NodeWithScore, rank: int) -> dict[str, Any]:
     node = node_with_score.node
     display_text = _get_display_content(node)
     text = _clean_text(display_text)
-    page = node.metadata.get("page_label") or node.metadata.get("page") or "?"
+    location_type, location = _node_location(node)
     score = node_with_score.score
     return {
         "rank": rank,
-        "page": page,
+        "page": location if location_type == "Page" else "?",
+        "section": location if location_type == "Section" else None,
         "score": round(float(score), 6) if score is not None else None,
         "node_id": node.node_id[:12],
         "chars": len(text),
@@ -664,7 +768,7 @@ def retrieve_trace(
     if _index is None:
         msg = (
             "No documents have been uploaded yet. "
-            "Ask the user to upload a PDF first."
+            "Ask the user to upload a PDF or Markdown file first."
         )
         steps.append({"step": "index", "ok": False, "detail": "no index in memory"})
         steps.append({"step": "return", "tool_string_chars": len(msg), "ok": False})
@@ -828,7 +932,9 @@ def retrieve_trace(
             or node.metadata.get("file_name")
             or "document"
         )
-        page = node.metadata.get("page_label") or node.metadata.get("page") or "?"
+        location_type, location = _node_location(node)
+        page = location if location_type == "Page" else "?"
+        section = location if location_type == "Section" else None
         methods = node.metadata.get("retrieval_methods", "hybrid")
         score = f"{node_ws.score:.4f}" if node_ws.score is not None else "n/a"
 
@@ -875,7 +981,7 @@ def retrieve_trace(
         card = (
             f"### Passage {i}\n"
             f"- Document: {source}\n"
-            f"- Page: {page}\n"
+            f"- {location_type}: {location}\n"
             f"{match_line}\n"
             f"\n{content}"
         )
@@ -884,6 +990,7 @@ def retrieve_trace(
             {
                 "passage": i,
                 "page": page,
+                "section": section,
                 "document": source,
                 "methods": methods,
                 "rrf_score": node.metadata.get("rrf_score")
@@ -916,7 +1023,7 @@ def retrieve_trace(
     )
 
     if not parts:
-        msg = "No readable passages found after cleaning PDF text."
+        msg = "No readable passages found after cleaning document text."
         steps.append({"step": "return", "tool_string_chars": len(msg), "ok": False})
         return {
             "query": query,

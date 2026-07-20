@@ -1,4 +1,4 @@
-"""FastAPI server: PDF upload + agentic RAG chat."""
+"""FastAPI server: document upload + agentic RAG chat."""
 
 from __future__ import annotations
 
@@ -16,7 +16,14 @@ from pydantic import BaseModel, Field
 
 from agent import iter_agent_events, run_agent
 from orchestrator import iter_orchestrator_events, run_orchestrator
-from rag import DATA_DIR, clear_index, has_index, ingest_pdf, list_documents
+from rag import (
+    DATA_DIR,
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    clear_index,
+    has_index,
+    ingest_document,
+    list_documents,
+)
 
 # Load .env from project root and backend/
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -24,7 +31,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 app = FastAPI(
     title="Agentic RAG",
-    description="LangGraph agent + LlamaIndex PDF retrieval (learning project)",
+    description="LangGraph agent + LlamaIndex document retrieval (learning project)",
     version="0.1.0",
 )
 
@@ -70,13 +77,18 @@ def delete_documents():
 
 
 @app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
     name = file.filename
-    if not name.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    extension = Path(name).suffix.lower()
+    if extension not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        supported = ", ".join(sorted(SUPPORTED_DOCUMENT_EXTENSIONS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Supported extensions: {supported}",
+        )
 
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(
@@ -86,7 +98,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     # Safe on-disk name
     stem = re.sub(r"[^\w.\-]+", "_", Path(name).stem)[:80] or "document"
-    saved = DATA_DIR / f"{stem}_{uuid.uuid4().hex[:8]}.pdf"
+    saved = DATA_DIR / f"{stem}_{uuid.uuid4().hex[:8]}{extension}"
 
     try:
         content = await file.read()
@@ -95,7 +107,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         if len(content) > 20 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large (max 20MB)")
         saved.write_bytes(content)
-        meta = ingest_pdf(saved, original_name=name)
+        meta = ingest_document(saved, original_name=name)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 — surface ingestion errors to the UI

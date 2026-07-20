@@ -5,7 +5,8 @@
 export type PassageSource = {
   index: number;
   document: string;
-  page: string;
+  page?: string;
+  section?: string;
   match?: string;
   preview: string;
 };
@@ -22,19 +23,22 @@ export function parsePassagesFromRetrieve(text: string): PassageSource[] {
     const index = Number(indexMatch[1]);
     const document =
       block.match(/^- Document:\s*(.+)$/m)?.[1]?.trim() || "document";
-    const page = block.match(/^- Page:\s*(.+)$/m)?.[1]?.trim() || "?";
+    const page = block.match(/^- Page:\s*(.+)$/m)?.[1]?.trim();
+    const section = block.match(/^- Section:\s*(.+)$/m)?.[1]?.trim();
     const match = block.match(/^- Match:\s*(.+)$/m)?.[1]?.trim();
     // Body after the metadata lines
     const body = block
       .replace(/^### Passage \d+\n/, "")
       .replace(/^- Document:.*\n?/m, "")
       .replace(/^- Page:.*\n?/m, "")
+      .replace(/^- Section:.*\n?/m, "")
       .replace(/^- Match:.*\n?/m, "")
       .trim();
     out.push({
       index,
       document,
       page,
+      section,
       match,
       preview: body.length > 160 ? `${body.slice(0, 160).trimEnd()}…` : body,
     });
@@ -68,7 +72,8 @@ export function summarizeRetrieveForToolUi(text: string, max = 360): string {
     return t.length <= max ? t : `${t.slice(0, max).trimEnd()}…`;
   }
   const lines = passages.map(
-    p => `p.${p.page} · ${shortDoc(p.document)}${p.match ? ` · ${p.match}` : ""}`,
+    p =>
+      `${formatPassageLocation(p)} · ${shortDoc(p.document)}${p.match ? ` · ${p.match}` : ""}`,
   );
   const head = `Found ${passages.length} passage(s):\n${lines.join("\n")}`;
   return head.length <= max ? head : `${head.slice(0, max).trimEnd()}…`;
@@ -76,7 +81,7 @@ export function summarizeRetrieveForToolUi(text: string, max = 360): string {
 
 function shortDoc(name: string, max = 36): string {
   if (name.length <= max) return name;
-  const base = name.replace(/\.pdf$/i, "");
+  const base = name.replace(/\.(pdf|md|markdown)$/i, "");
   if (base.length <= max - 1) return `${base}…`;
   return `${base.slice(0, max - 1)}…`;
 }
@@ -104,17 +109,24 @@ export function cleanAnswerCitations(text: string): string {
   return t.trim();
 }
 
-/** Unique document+page pairs for a Sources footer. */
+export function formatPassageLocation(
+  source: Pick<PassageSource, "page" | "section">,
+): string {
+  if (source.page && source.page !== "?") return `p.${source.page}`;
+  return `§ ${source.section || "Document"}`;
+}
+
+/** Unique document+location pairs for a Sources footer. */
 export function uniqueSourceKeys(
   passages: PassageSource[],
-): Array<{document: string; page: string}> {
+): Array<{document: string; page?: string; section?: string}> {
   const seen = new Set<string>();
-  const out: Array<{document: string; page: string}> = [];
+  const out: Array<{document: string; page?: string; section?: string}> = [];
   for (const p of passages) {
-    const key = `${p.document}::${p.page}`;
+    const key = `${p.document}::${p.page || p.section || "Document"}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({document: p.document, page: p.page});
+    out.push({document: p.document, page: p.page, section: p.section});
   }
   return out;
 }

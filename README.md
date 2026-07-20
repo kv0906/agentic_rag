@@ -4,12 +4,12 @@ A minimal **agentic RAG** app so you can see how the pieces fit:
 
 | Layer | Role |
 |--------|------|
-| **LlamaIndex** | PDF load → chunk → embed → hybrid retrieve (vector + BM25 → RRF → cross-encoder rerank) |
+| **LlamaIndex** | PDF/Markdown load → type-aware chunk → embed → hybrid retrieve (vector + BM25 → RRF → cross-encoder rerank) |
 | **LangGraph** | Agent graph: decide → retrieve → grade → rewrite (loop) → answer |
 | **Astryx + Next.js** | Upload + chat UI (tool calls visible) |
 | **FastAPI** | Glue API (`/api/upload`, `/api/chat`) |
 
-Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/oss/python/langgraph/agentic-rag), with **PDF upload** instead of scraping blog posts, and **LlamaIndex** as the retriever.
+Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/oss/python/langgraph/agentic-rag), with **PDF/Markdown upload** instead of scraping blog posts, and **LlamaIndex** as the retriever.
 
 ## How the agent works
 
@@ -34,7 +34,7 @@ Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/os
 ```
 
 1. **Decide** — model either greets / answers without docs, or calls `retrieve_documents`.
-2. **Retrieve** — Hybrid search (vector + BM25 → RRF wide shortlist → cross-encoder rerank) returns top-k PDF chunks.
+2. **Retrieve** — Hybrid search (vector + BM25 → RRF wide shortlist → cross-encoder rerank) returns top-k document chunks.
 3. **Grade** — structured yes/no relevance check.
 4. **Rewrite** — if chunks are weak, improve the question and retrieve again.
 5. **Answer** — final grounded response.
@@ -49,7 +49,7 @@ Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/os
 
 ```bash
 # 1) Frontend deps (Astryx already listed)
-npm install
+pnpm install
 
 # 2) Backend venv
 python3 -m venv .venv
@@ -69,7 +69,7 @@ source .venv/bin/activate
 cd backend && uvicorn main:app --reload --port 8000
 
 # Terminal B — UI
-npm run dev
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) (redirects to `/ai-chat`).
@@ -78,7 +78,7 @@ Next.js rewrites `/api/*` → `http://127.0.0.1:8000/api/*`.
 
 ## Try it
 
-1. Upload a short PDF via the paperclip on the Astryx chat composer.
+1. Upload a short PDF or UTF-8 Markdown file via the paperclip on the Astryx chat composer.
 2. Ask something that needs the doc (“What is section 2 about?”).
 3. Watch tool calls: `retrieve_documents`, optional `rewrite_question`, then the answer.
 4. Say “hello” — the agent can reply **without** retrieving.
@@ -100,7 +100,7 @@ python orchestrator.py "What is a binary market?"
 ```
 backend/
   main.py              # FastAPI routes (+ orchestrate stream)
-  rag.py               # PDF ingest, hybrid retrieve, CE rerank, optional contextual
+  rag.py               # Type-aware ingest, hybrid retrieve, CE rerank, optional contextual
   agent.py             # LangGraph agentic RAG graph
   orchestrator.py      # Multi-agent: ask_docs → specialist RAG
 eval/

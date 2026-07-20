@@ -5,7 +5,10 @@ import {VStack} from "@astryxdesign/core/VStack";
 import {Text} from "@astryxdesign/core/Text";
 import {Token} from "@astryxdesign/core/Token";
 import type {PassageSource} from "@/lib/citations";
-import {uniqueSourceKeys} from "@/lib/citations";
+import {
+  formatPassageLocation,
+  uniqueSourceKeys,
+} from "@/lib/citations";
 
 type Props = {
   passages: PassageSource[];
@@ -26,11 +29,11 @@ export function SourceCitations({passages}: Props) {
       <HStack gap={2} wrap="wrap">
         {keys.map(k => (
           <Token
-            key={`${k.document}-${k.page}`}
+            key={`${k.document}-${k.page || k.section}`}
             size="sm"
             color="gray"
-            label={`p.${k.page} · ${shortName(k.document)}`}
-            description={`${k.document} — page ${k.page}`}
+            label={`${formatPassageLocation(k)} · ${shortName(k.document)}`}
+            description={`${k.document} — ${formatPassageLocation(k)}`}
           />
         ))}
       </HStack>
@@ -39,7 +42,7 @@ export function SourceCitations({passages}: Props) {
 }
 
 function shortName(name: string, max = 28): string {
-  const base = name.replace(/\.pdf$/i, "");
+  const base = name.replace(/\.(pdf|md|markdown)$/i, "");
   if (base.length <= max) return base;
   return `${base.slice(0, max - 1)}…`;
 }

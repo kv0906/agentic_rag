@@ -241,7 +241,8 @@ Chunker “thấy” ranh giới → chunk **gần với cách người đọc c
 | Idea | In code |
 |------|---------|
 | Classic name (LangChain) | `RecursiveCharacterTextSplitter` |
-| **This repo** | `SentenceSplitter(chunk_size=512, chunk_overlap=64)` in `backend/rag.py` |
+| **This repo (PDF)** | `SentenceSplitter(chunk_size=512, chunk_overlap=64)` in `backend/rag.py` |
+| **This repo (Markdown)** | `MarkdownNodeParser` by heading → `SentenceSplitter` size cap |
 | Spirit | Sentence-aware + size cap + overlap — not blind fixed char cuts |
 | Related | Ch. 19 Contextual Retrieval = labels after split, not a different splitter |
 
@@ -330,7 +331,7 @@ Overlap gần như luôn bật nếu dùng fixed (repo: `chunk_overlap=64` trên
   • Topic nhảy trong cùng 1 đoạn dài (recursive không “hiểu” topic)
 ```
 
-Repo: `SentenceSplitter(512, 64)` ≈ nhánh này — hợp playbook / PDF học tập.
+Repo: PDF dùng `SentenceSplitter(512, 64)`; Markdown giữ cấu trúc heading trước rồi mới áp size cap.
 
 #### Semantic (cắt khi topic / embedding đổi)
 
@@ -403,7 +404,8 @@ Repo: `SentenceSplitter(512, 64)` ≈ nhánh này — hợp playbook / PDF học
   PDF playbook / learning docs
        │
        ▼
-  SentenceSplitter 512/64     ← recursive-ish, default tốt
+  PDF      → SentenceSplitter 512/64
+  Markdown → MarkdownNodeParser → SentenceSplitter size cap
        │
        ├─ RAG_CONTEXTUAL=1    ← khi miss fact “local”
        │
@@ -425,7 +427,7 @@ Repo: `SentenceSplitter(512, 64)` ≈ nhánh này — hợp playbook / PDF học
 | Messy + cần “mục + nhãn” | **Agentic** (thường hybrid) |
 | Chunk đúng nhưng search kém | **Contextual** (Ch. 19 label), không đổi dao cắt |
 
-**Takeaway:** Chọn chunking theo **loại văn bản + cấu trúc + budget**, không theo trend. Bảng này là cheat sheet case-by-case; default của repo vẫn là recursive-ish `SentenceSplitter` ± contextual.
+**Takeaway:** Chọn chunking theo **loại văn bản + cấu trúc + budget**, không theo trend. Repo route theo file type: PDF dùng sentence-aware split; Markdown dùng heading-aware split rồi giới hạn kích thước; cả hai đều hỗ trợ contextual retrieval.
 
 ---
 
