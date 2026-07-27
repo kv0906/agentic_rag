@@ -27,8 +27,9 @@ Split by topic so files stay readable. Older link: [`docs/LEARNING_JOURNEY.md`](
 | 4 | [04-hybrid-search.md](./04-hybrid-search.md) | 11–12 | Vector + BM25 + RRF, multi-retriever |
 | 5 | [05-ship-eval-polish.md](./05-ship-eval-polish.md) | 13–17 | 2026 practices, eval, polish, gap fixes |
 | 6 | [06-rerank.md](./06-rerank.md) | 18 | Cross-encoder rerank |
-| 7 | [07-chunking.md](./07-chunking.md) | 19–21 | Contextual, recursive (VI+ASCII), **doc↔chunking tables** |
+| 7 | [07-chunking.md](./07-chunking.md) | 19–21, 24 | Contextual, recursive, doc↔chunking tables, **parent-child** |
 | 8 | [08-agent-evals.md](./08-agent-evals.md) | 22–23 | Eval **philosophy** + **six categories** |
+| 9 | [09-query-understanding.md](./09-query-understanding.md) | 25–27 | **Decontextualization**, intent lanes, **HyDE** |
 
 ### Jump to locked mental models
 
@@ -37,6 +38,9 @@ Split by topic so files stay readable. Older link: [`docs/LEARNING_JOURNEY.md`](
 | Recursive chunking (easy VI + ASCII) | [07-chunking.md](./07-chunking.md) § Ch. 20 |
 | Doc type → which chunking? | [07-chunking.md](./07-chunking.md) § Ch. 21 |
 | Contextual Retrieval labels | [07-chunking.md](./07-chunking.md) § Ch. 19 |
+| Parent-child: search small, answer big | [07-chunking.md](./07-chunking.md) § Ch. 24 |
+| Decontextualization + factoid/deep lanes | [09-query-understanding.md](./09-query-understanding.md) § Ch. 25–26 |
+| HyDE | [09-query-understanding.md](./09-query-understanding.md) § Ch. 27 |
 | Hybrid + RRF | [04-hybrid-search.md](./04-hybrid-search.md) |
 | Rerank / cross-encoder | [06-rerank.md](./06-rerank.md) |
 | **Core eval philosophy** (intention → trust) | [08-agent-evals.md](./08-agent-evals.md) § **Ch. 23** |
@@ -85,6 +89,12 @@ Split by topic so files stay readable. Older link: [`docs/LEARNING_JOURNEY.md`](
        │
        ▼
   Agent eval: philosophy (trust/reliability) + 6 categories
+       │
+       ▼
+  Parent-child: search small, answer with wider context
+       │
+       ▼
+  Query understanding: decontextualize → intent lane → optional HyDE
 ```
 
 ## Suggested re-read order
@@ -120,11 +130,21 @@ Split by topic so files stay readable. Older link: [`docs/LEARNING_JOURNEY.md`](
 - [x] Split learning log into `docs/learning/` by topic  
 - [x] Agent eval foundation categories (Ch. 22 / `08-agent-evals.md`)  
 - [x] Core eval philosophy: intention/goal/direction → harness → trust & reliability (Ch. 23)  
+- [x] Parent-child chunking mental model (Ch. 24, concept only)
+- [x] Decontextualization + factoid/deep intent lanes (Ch. 25–26, concept only)
+- [x] HyDE mental model + safe gating pattern (Ch. 27, concept only)
 
 ### Next sessions (priority order)
 - [ ] Optional: tighten **q04** / **q15** answer must_haves (wording / Group 1 numbers)  
 - [ ] Re-run Ragas after CE (compare factual_correctness vs hybrid-only)  
+- [ ] Parent-child experiment: child retrieval → deduped parent context → compare goldens
+- [ ] Decontextualization golden set + fallback-safe implementation
+- [ ] Intent lanes; measure quality / latency / cost per lane
+- [ ] HyDE A/B for `deep` only (keep normal hybrid as the base path)
 - [ ] Persist index (disk / vector DB)  
+- [ ] Tenant-scoped metadata and isolation model
+- [ ] Multi-hop decomposition + parallel retrieval
+- [ ] Security eval lane (injection, evidence bypass, tenant leakage)
 - [ ] Optional: click source token → expand passage preview  
 - [ ] Multi-PDF metadata filters  
 - [ ] Token-level answer streaming  
@@ -210,8 +230,13 @@ Ingest: pypdf → LlamaIndex chunk/embed → in-memory VectorStoreIndex
 59. Split learning log into `docs/learning/` by topic  
 60. Agent eval foundation: six categories (outcome, process, grounding, safety, efficiency, UX) — Ch. 22  
 61. Core philosophy: human intention/goal/direction → harness → trust & reliability — Ch. 23  
+62. Compare StudyMate advanced RAG techniques with this repo
+63. Parent-child chunking: search children, answer from parents — Ch. 24
+64. Factoid intent + query decontextualization — Ch. 25–26
+65. HyDE: hypothetical answer embedding as a search clue — Ch. 27
+66. Compact advanced retrieval learnings into durable topic notes
 
 ---
 
 *Split from monolithic `LEARNING_JOURNEY.md` for readability. Chapter numbers preserved across files.*  
-*Last updated: Ch. 23 core eval philosophy + Ch. 22 six categories (`08-agent-evals.md`).*
+*Last updated: Ch. 24 parent-child + Ch. 25–27 query understanding and HyDE.*
