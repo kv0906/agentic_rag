@@ -431,3 +431,146 @@ Repo: PDF dùng `SentenceSplitter(512, 64)`; Markdown giữ cấu trúc heading 
 
 ---
 
+## Chapter 24 — Parent-child chunking: search small, answer big
+
+> **Status in this repo:** learned and documented; **not implemented yet**.
+
+### One picture
+
+```
+  Parent P1 — wider context (~400 words)
+  ┌─────────────────────────────────────────────────────┐
+  │ [Child A] [Child B] [Child C] [Child D]             │
+  │  ~100w     ~100w     ~100w     ~100w                │
+  └─────────────────────────────────────────────────────┘
+        │         │         │         │
+        └─────────┴─────────┴─────────┘
+                    search these
+
+  Query matches Child C
+          │
+          ▼
+  Return Parent P1 to rerank / grade / answer
+```
+
+**Standing one-liner:** a child helps us **find the right place**; its parent helps us **understand that place**.
+
+### Why two sizes?
+
+Search and answer generation want opposite things:
+
+| Unit | Good at | Weakness |
+|------|---------|----------|
+| Small child | Precise embedding/BM25 match | May omit nearby facts |
+| Large parent | Complete explanation for the LLM | Less precise as a search vector |
+
+Parent-child separates the two jobs instead of forcing one chunk size to compromise.
+
+### Practical ingest model
+
+```
+  parsed section
+       │
+       ├─ parent windows: 400 words, overlap 50
+       │
+       └─ each parent → child windows: 100 words, overlap 10
+```
+
+Conceptual record:
+
+```text
+Child {
+  content: precise searchable text
+  parent_content: wider answer context
+  page / section / offsets
+  source_excerpt: precise citation highlight
+}
+```
+
+One practical implementation can store `parent_content` beside every child. This duplicates text, but avoids a second database lookup after retrieval. A normalized vector DB design may instead store `parent_id` and resolve the parent after search.
+
+### Query-time flow
+
+```
+  query
+    │
+    ▼
+  vector + BM25 search CHILDREN
+    │
+    ▼
+  matching children: C2 → P1, C3 → P1, C8 → P4
+    │
+    ▼
+  resolve parents + dedupe
+    │
+    ▼
+  P1, P4
+    │
+    ▼
+  rerank / grade / answer
+```
+
+Several children can point to the same parent, so deduplication is required. Keep the score and citation metadata from the strongest matching child.
+
+### Citation contract
+
+```
+  child excerpt   = why retrieval matched
+  parent content  = what the answer model read
+  page + offsets  = what the UI highlights
+```
+
+Do not lose the child evidence when returning the parent. Otherwise a citation can highlight hundreds of words without showing the precise match.
+
+### Parent-child vs nearby concepts
+
+| Technique | Job |
+|-----------|-----|
+| Recursive / structure-aware split | Choose natural boundaries |
+| Parent-child | Use different units for search and answering |
+| Contextual Retrieval | Add document/section meaning before indexing |
+| Overlap | Protect facts at boundaries |
+| Rerank | Reorder retrieved candidates |
+
+They compose:
+
+```
+  structure-aware parent
+      → child windows
+      → contextual labels
+      → search children
+      → resolve parents
+      → rerank
+      → answer
+```
+
+### Map to this repo
+
+Current:
+
+```
+  512-token chunk → search + answer
+```
+
+Possible experiment:
+
+```
+  section-aware parent
+      → smaller child
+      → vector + BM25 + RRF on child
+      → CE rerank
+      → dedupe parents
+      → grade + answer from parents
+```
+
+Do not ship based on intuition alone. Compare against the same golden set:
+
+- child Hit@k / `must_have_in_chunks`
+- answer factual correctness
+- duplicate-parent rate
+- total context characters
+- retrieval + rerank latency
+
+**Takeaway:** Parent-child is valuable when small chunks retrieve precisely but do not carry enough neighboring facts to answer completely.
+
+---
