@@ -29,6 +29,7 @@ Split by topic so files stay readable. Older link: [`docs/LEARNING_JOURNEY.md`](
 | 6 | [06-rerank.md](./06-rerank.md) | 18 | Cross-encoder rerank |
 | 7 | [07-chunking.md](./07-chunking.md) | 19–21 | Contextual, recursive (VI+ASCII), **doc↔chunking tables** |
 | 8 | [08-agent-evals.md](./08-agent-evals.md) | 22–23 | Eval **philosophy** + **six categories** |
+| 9 | [09-jev-routing.md](./09-jev-routing.md) | 24 | Proposed Jev intake decision: Fast vs Deep grounded RAG |
 
 ### Jump to locked mental models
 
@@ -210,8 +211,9 @@ Ingest: pypdf → LlamaIndex chunk/embed → in-memory VectorStoreIndex
 59. Split learning log into `docs/learning/` by topic  
 60. Agent eval foundation: six categories (outcome, process, grounding, safety, efficiency, UX) — Ch. 22  
 61. Core philosophy: human intention/goal/direction → harness → trust & reliability — Ch. 23  
+62. Jev returns a decision, not answer text: route to Fast or Deep grounded RAG — Ch. 24
 
 ---
 
 *Split from monolithic `LEARNING_JOURNEY.md` for readability. Chapter numbers preserved across files.*  
-*Last updated: Ch. 23 core eval philosophy + Ch. 22 six categories (`08-agent-evals.md`).*
+*Last updated: Ch. 24 proposed Jev intake routing (`09-jev-routing.md`).*

@@ -58,6 +58,13 @@ UI (Astryx) → FastAPI → LangGraph agent loop → tool → LlamaIndex retriev
 Ingest: pypdf → LlamaIndex chunk/embed → in-memory VectorStoreIndex
 ```
 
+## TypeSafe
+
+Use the `typesafe-ai` skill when designing or implementing AI decision steps in
+this project, including intake routing, evidence grading, and citation checks.
+Read its live documentation before proposing an integration; keep workflow policy
+in code and preserve grounded retrieval for document questions.
+
 ## Astryx UI
 
 See `.claude/CLAUDE.md` (Astryx block). Prefer `npx astryx build/component/template` over inventing layout.
