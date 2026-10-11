@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# Dependencies are restored with the snapshot, not installed on every wake.
+test -x .venv/bin/python
+test -d node_modules/next
+echo "[resume] Frontend and backend dependencies are ready"

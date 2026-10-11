@@ -17,3 +17,4 @@ eval/_playbook_extract.txt
 eval/results*.md
 tsconfig.tsbuildinfo
 eval/results*.json
+.amp/portals/*

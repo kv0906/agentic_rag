@@ -45,6 +45,18 @@ Based on the [LangGraph custom RAG agent tutorial](https://docs.langchain.com/os
 - Python 3.11+
 - OpenAI API key (embeddings + chat)
 
+## Amp orbs
+
+`.agents/setup` installs the npm lockfile dependencies and a Python `.venv`
+with `uv`, using CPU-only PyTorch. Amp snapshots that environment so matching
+fresh orbs reuse it without running setup again. Stale snapshots rerun setup;
+`.agents/resume` only checks dependencies and never installs them.
+
+Set `OPENAI_API_KEY` through Amp secrets for chat and embeddings. Setup does not
+copy credentials into the shared snapshot. The API can boot without a key.
+Start the UI with `npm run dev` and the API with `npm run backend` through Amp's
+supervised orb services when needed.
+
 ## Setup
 
 ```bash
