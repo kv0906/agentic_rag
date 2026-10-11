@@ -1,0 +1,15 @@
+.git
+.amp
+.agents
+.claude
+.env*
+node_modules
+.next
+.venv
+**/__pycache__
+backend/data
+eval
+docs
+deploy/cloudflare/node_modules
+deploy/cloudflare/.cloudflare
+*.log

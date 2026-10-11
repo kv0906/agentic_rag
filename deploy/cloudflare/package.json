@@ -1,0 +1,16 @@
+{
+  "name": "agentic-rag-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cf build",
+    "deploy": "cf deploy"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "cf": "1.0.0-beta.14",
+    "wrangler": "^4.149.0"
+  }
+}

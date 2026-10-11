@@ -18,3 +18,5 @@ eval/results*.md
 tsconfig.tsbuildinfo
 eval/results*.json
 .amp/portals/*
+.cloudflare/
+.wrangler/

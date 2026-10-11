@@ -93,19 +93,11 @@ export async function chat(message: string): Promise<ChatResponse> {
 /** Chat mode: direct agentic RAG vs multi-agent orchestrator. */
 export type ChatMode = "direct" | "orchestrator";
 
-/**
- * Prefer direct backend URL in dev so Next rewrites don't buffer SSE.
- */
+/** Use the same-origin proxy in local, remote preview, and deployed browsers. */
 function streamEndpoint(mode: ChatMode = "direct"): string {
-  const path =
-    mode === "orchestrator" ? "/api/orchestrate/stream" : "/api/chat/stream";
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    return (
-      (process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
-        "http://127.0.0.1:8000") + path
-    );
-  }
-  return path;
+  return mode === "orchestrator"
+    ? "/api/orchestrate/stream"
+    : "/api/chat/stream";
 }
 
 /**
@@ -139,32 +131,39 @@ export async function chatStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, {stream: true});
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
 
-    // SSE frames separated by blank lines
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
+      // SSE frames separated by blank lines
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
 
-    for (const part of parts) {
-      const lines = part.split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const raw = trimmed.slice(5).trim();
-        if (!raw || raw === "[DONE]") continue;
-        try {
-          const event = JSON.parse(raw) as StreamEvent;
-          onEvent(event);
-          if (event.type === "done" || event.type === "error") {
-            return;
+      for (const part of parts) {
+        const lines = part.split("\n");
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const raw = trimmed.slice(5).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let event: StreamEvent;
+          try {
+            event = JSON.parse(raw) as StreamEvent;
+          } catch {
+            // Ignore non-JSON frames, but never swallow consumer or agent errors.
+            continue;
           }
-        } catch {
-          // ignore partial / non-JSON frames
+          onEvent(event);
+          if (event.type === "error") throw new Error(event.message);
+          if (event.type === "done") return;
         }
       }
     }
+    throw new Error("Agent stream ended before the answer was complete");
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }

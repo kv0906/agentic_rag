@@ -2,6 +2,7 @@ import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // Prefer this project over parent monorepo lockfiles
   outputFileTracingRoot: path.join(__dirname),
   // Proxy API calls to the FastAPI backend during local dev

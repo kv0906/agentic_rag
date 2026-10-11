@@ -96,12 +96,18 @@ async def upload_document(file: UploadFile = File(...)):
             detail="OPENAI_API_KEY is not set. Add it to a .env file in the project root.",
         )
 
+    if any(document["filename"] == name for document in list_documents()):
+        raise HTTPException(
+            status_code=409,
+            detail="This filename is already indexed. Clear documents before replacing it.",
+        )
+
     # Safe on-disk name
     stem = re.sub(r"[^\w.\-]+", "_", Path(name).stem)[:80] or "document"
     saved = DATA_DIR / f"{stem}_{uuid.uuid4().hex[:8]}{extension}"
 
     try:
-        content = await file.read()
+        content = await file.read(20 * 1024 * 1024 + 1)
         if not content:
             raise HTTPException(status_code=400, detail="Empty file")
         if len(content) > 20 * 1024 * 1024:
